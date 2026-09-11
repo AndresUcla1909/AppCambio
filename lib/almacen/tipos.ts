@@ -42,16 +42,3 @@ export type TasaNueva = {
   eur: number | null;
   fuente: FuenteTasa;
 };
-
-/**
- * Contrato del almacén. Hoy lo cumple un archivo JSON local; mañana, Supabase.
- * Ninguna parte de la app debe saber cuál de los dos está detrás.
- */
-export interface RepositorioTasas {
-  /** Historial completo, de la fecha más reciente a la más antigua. */
-  listar(limite?: number): Promise<FilaTasaConVariacion[]>;
-  /** La última tasa con fecha valor <= `fecha`. `null` si no hay ninguna. */
-  tasaEn(fecha: DiaISO): Promise<TasaVigente | null>;
-  /** Inserta o actualiza por fecha. Idempotente. */
-  guardar(tasa: TasaNueva): Promise<FilaTasa>;
-}

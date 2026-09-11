@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Download, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/table";
 import { GraficoHistorial } from "@/components/historial/GraficoHistorial";
 import { FormularioTasa } from "@/components/historial/FormularioTasa";
+import { obtenerHistorial } from "@/lib/almacen/navegador";
 import type { FilaTasaConVariacion } from "@/lib/almacen/tipos";
 import {
   calcularVariacion,
@@ -41,14 +42,21 @@ const NOMBRE_FUENTE: Record<string, string> = {
   manual: "Manual",
 };
 
-export function VistaHistorial({
-  filasIniciales,
-}: {
-  filasIniciales: FilaTasaConVariacion[];
-}) {
-  const [filas, setFilas] = useState(filasIniciales);
+export function VistaHistorial() {
+  const [filas, setFilas] = useState<FilaTasaConVariacion[]>([]);
+  const [listo, setListo] = useState(false);
   const [rango, setRango] = useState<ClaveRango>("30");
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
+
+  const recargar = useCallback(() => {
+    setFilas(obtenerHistorial());
+  }, []);
+
+  // El historial está en localStorage, así que sólo se puede leer tras montar.
+  useEffect(() => {
+    recargar();
+    setListo(true);
+  }, [recargar]);
 
   // Las filas llegan de la más reciente a la más antigua.
   const filasDelRango = useMemo(() => {
@@ -57,19 +65,6 @@ export function VistaHistorial({
     const desde = restarDias(hoyCaracas(), dias);
     return filas.filter((f) => f.fecha >= desde);
   }, [filas, rango]);
-
-  async function recargar() {
-    try {
-      const respuesta = await fetch("/api/tasas", { cache: "no-store" });
-      if (!respuesta.ok) throw new Error("No se pudo recargar");
-      const { filas: nuevas } = (await respuesta.json()) as {
-        filas: FilaTasaConVariacion[];
-      };
-      setFilas(nuevas);
-    } catch {
-      toast.error("No se pudo recargar el historial");
-    }
-  }
 
   function exportarCsv() {
     if (filas.length === 0) {
@@ -136,18 +131,18 @@ export function VistaHistorial({
       <div id="cargar" className="scroll-mt-4">
         {mostrarFormulario ? (
           <FormularioTasa
-            onGuardada={async () => {
-              await recargar();
+            onGuardada={() => {
+              recargar();
               setMostrarFormulario(false);
             }}
           />
         ) : null}
       </div>
 
-      {filas.length === 0 ? (
+      {!listo ? null : filas.length === 0 ? (
         <p className="text-muted-foreground border-border bg-card rounded-2xl border p-6 text-center text-sm">
-          Todavía no hay tasas guardadas. Usa el botón + para cargar una, o
-          ejecuta la actualización del BCV desde Ajustes.
+          Todavía no hay tasas guardadas en este teléfono. Usa el botón + para
+          cargar una, o abre la calculadora para que capture la del día.
         </p>
       ) : (
         <>
@@ -222,7 +217,8 @@ export function VistaHistorial({
           </div>
 
           <p className="text-muted-foreground text-center text-[11px]">
-            {filasDelRango.length} de {filas.length} publicaciones
+            {filasDelRango.length} de {filas.length} publicaciones · guardadas en
+            este teléfono
           </p>
         </>
       )}

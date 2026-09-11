@@ -9,7 +9,14 @@ import { CampoMonto } from "@/components/CampoMonto";
 import { SelectorFecha } from "@/components/SelectorFecha";
 import { TarjetaTasa } from "@/components/TarjetaTasa";
 import type { PrecioP2P } from "@/lib/binance/p2p";
+import type { TasaBcv } from "@/lib/bcv/scraper";
 import type { TasaVigente } from "@/lib/almacen/tipos";
+import {
+  guardarTasa,
+  obtenerTasaVigente,
+  pedirPersistencia,
+  sembrarSiHaceFalta,
+} from "@/lib/almacen/navegador";
 import {
   calcularBrecha,
   calcularVariacion,
@@ -17,28 +24,24 @@ import {
   formatearHora,
   formatearMonto,
   formatearTasa,
+  hoyCaracas,
   parsearMonto,
   type DiaISO,
 } from "@/lib/formato";
 import {
-  guardarCache,
   guardarTasaPreferida,
-  leerCache,
   leerTasaPreferida,
   type TipoTasa,
 } from "@/lib/offline";
 import { cn } from "@/lib/utils";
 
-type Props = {
-  /** Tasa de hoy, resuelta en el servidor para que la primera pintada ya traiga datos. */
-  tasaInicial: TasaVigente | null;
-  hoy: DiaISO;
-};
-
-export function Calculadora({ tasaInicial, hoy }: Props) {
+export function Calculadora() {
+  // `hoy` se fija al montar para no recalcularlo en cada render.
+  const [hoy] = useState<DiaISO>(() => hoyCaracas());
   const [dia, setDia] = useState<DiaISO>(hoy);
-  const [bcv, setBcv] = useState<TasaVigente | null>(tasaInicial);
-  const [cargandoBcv, setCargandoBcv] = useState(false);
+  const [bcv, setBcv] = useState<TasaVigente | null>(null);
+  const [listo, setListo] = useState(false);
+  const [capturando, setCapturando] = useState(false);
 
   const [p2p, setP2p] = useState<PrecioP2P | null>(null);
   const [cargandoP2p, setCargandoP2p] = useState(true);
@@ -46,7 +49,6 @@ export function Calculadora({ tasaInicial, hoy }: Props) {
 
   const [seleccion, setSeleccion] = useState<TipoTasa>("bcv_usd");
   const [sinConexion, setSinConexion] = useState(false);
-  const [cacheUsada, setCacheUsada] = useState<string | null>(null);
 
   const [usd, setUsd] = useState("");
   const [bs, setBs] = useState("");
@@ -56,8 +58,41 @@ export function Calculadora({ tasaInicial, hoy }: Props) {
   const esHoy = dia === hoy;
 
   /* ---------------------------------------------------------------- */
-  /* Carga de datos                                                    */
+  /* Datos                                                             */
   /* ---------------------------------------------------------------- */
+
+  /**
+   * Pide al servidor la tasa que el BCV publica ahora y la guarda en este
+   * aparato. Es la única forma en que crece el historial: la app no puede
+   * ejecutarse en segundo plano en iOS.
+   */
+  const capturarBcv = useCallback(
+    async (fechaMostrada: DiaISO) => {
+      setCapturando(true);
+      try {
+        const respuesta = await fetch("/api/bcv", { cache: "no-store" });
+        if (!respuesta.ok) throw new Error("El BCV no respondió");
+        const tasa = (await respuesta.json()) as TasaBcv;
+
+        guardarTasa({
+          fecha: tasa.fecha,
+          usd: tasa.usd,
+          eur: tasa.eur,
+          fuente: "bcv",
+        });
+        setBcv(obtenerTasaVigente(fechaMostrada));
+        setSinConexion(false);
+        return tasa;
+      } catch {
+        // Sin red se sigue con lo guardado: para eso está el almacén local.
+        setSinConexion(true);
+        return null;
+      } finally {
+        setCapturando(false);
+      }
+    },
+    [],
+  );
 
   const cargarP2p = useCallback(async () => {
     setCargandoP2p(true);
@@ -79,63 +114,32 @@ export function Calculadora({ tasaInicial, hoy }: Props) {
     }
   }, []);
 
-  const cargarBcv = useCallback(async (fecha: DiaISO) => {
-    setCargandoBcv(true);
-    try {
-      const respuesta = await fetch(
-        `/api/tasas/vigente?fecha=${encodeURIComponent(fecha)}`,
-        { cache: "no-store" },
-      );
-      if (!respuesta.ok) throw new Error("No se pudo leer la tasa");
-      const { tasa } = (await respuesta.json()) as { tasa: TasaVigente | null };
-      setBcv(tasa);
-      setSinConexion(false);
-      return tasa;
-    } catch {
-      // Sin red: se tira de lo último guardado, si sirve para esa fecha.
-      const cache = leerCache();
-      if (cache?.bcv && cache.dia === fecha) {
-        setBcv(cache.bcv);
-        setP2p((previo) => previo ?? cache.p2p);
-        setCacheUsada(cache.guardadoEn);
-      }
-      setSinConexion(true);
-      return null;
-    } finally {
-      setCargandoBcv(false);
-    }
-  }, []);
-
-  // Preferencia guardada y primer intento de traer el precio P2P.
+  // Arranque: se pinta lo guardado de inmediato y luego se busca lo nuevo.
   useEffect(() => {
+    sembrarSiHaceFalta();
+    void pedirPersistencia();
+
     const preferida = leerTasaPreferida();
     if (preferida) setSeleccion(preferida);
+
+    setBcv(obtenerTasaVigente(hoy));
+    setListo(true);
+
+    void capturarBcv(hoy);
     void cargarP2p();
-  }, [cargarP2p]);
+  }, [hoy, capturarBcv, cargarP2p]);
 
-  // Cambiar de fecha recarga la tasa vigente de ese día. La de hoy ya vino
-  // del servidor, así que la primera pasada no vuelve a pedirla.
-  const primeraCarga = useRef(true);
+  // Cambiar de fecha sólo consulta el almacén local: es instantáneo.
   useEffect(() => {
-    if (primeraCarga.current) {
-      primeraCarga.current = false;
-      if (dia === hoy) return;
-    }
-    void cargarBcv(dia);
-  }, [dia, hoy, cargarBcv]);
+    if (!listo) return;
+    setBcv(obtenerTasaVigente(dia));
+  }, [dia, listo]);
 
-  // Guardar lo último visto de hoy, para el modo offline.
-  useEffect(() => {
-    if (!esHoy || (!bcv && !p2p)) return;
-    guardarCache({ dia, bcv, p2p, guardadoEn: new Date().toISOString() });
-  }, [dia, esHoy, bcv, p2p]);
-
-  // Avisar cuando el navegador pierde o recupera la conexión.
+  // Al recuperar la conexión se vuelve a intentar lo que falló.
   useEffect(() => {
     const alConectar = () => {
       setSinConexion(false);
-      setCacheUsada(null);
-      void cargarBcv(dia);
+      void capturarBcv(dia);
       if (esHoy) void cargarP2p();
     };
     const alDesconectar = () => setSinConexion(true);
@@ -149,7 +153,7 @@ export function Calculadora({ tasaInicial, hoy }: Props) {
       window.removeEventListener("online", alConectar);
       window.removeEventListener("offline", alDesconectar);
     };
-  }, [dia, esHoy, cargarBcv, cargarP2p]);
+  }, [dia, esHoy, capturarBcv, cargarP2p]);
 
   /* ---------------------------------------------------------------- */
   /* Tasa activa y cálculo                                             */
@@ -192,11 +196,11 @@ export function Calculadora({ tasaInicial, hoy }: Props) {
   function escribirUsd(valor: string) {
     ultimoEditado.current = "usd";
     setUsd(valor);
-    const monto = parsearMonto(valor);
     if (valor.trim() === "") {
       setBs("");
       return;
     }
+    const monto = parsearMonto(valor);
     // Mientras la entrada no sea un número válido se deja el otro campo quieto.
     if (monto == null || tasaActiva == null) return;
     setBs(formatearMonto(monto * tasaActiva));
@@ -205,11 +209,11 @@ export function Calculadora({ tasaInicial, hoy }: Props) {
   function escribirBs(valor: string) {
     ultimoEditado.current = "bs";
     setBs(valor);
-    const monto = parsearMonto(valor);
     if (valor.trim() === "") {
       setUsd("");
       return;
     }
+    const monto = parsearMonto(valor);
     if (monto == null || tasaActiva == null) return;
     setUsd(formatearMonto(monto / tasaActiva));
   }
@@ -254,11 +258,11 @@ export function Calculadora({ tasaInicial, hoy }: Props) {
   }
 
   async function refrescar() {
-    const tareas: Promise<unknown>[] = [cargarBcv(dia)];
+    const tareas: Promise<unknown>[] = [capturarBcv(dia)];
     if (esHoy) tareas.push(cargarP2p());
-    await Promise.all(tareas);
-    setCacheUsada(null);
-    toast.success("Actualizado");
+    const [tasa] = await Promise.all(tareas);
+    if (tasa) toast.success("Actualizado");
+    else toast.error("No se pudo contactar al BCV");
   }
 
   /* ---------------------------------------------------------------- */
@@ -268,6 +272,7 @@ export function Calculadora({ tasaInicial, hoy }: Props) {
   const variacionUsd = calcularVariacion(bcv?.usd, bcv?.usd_anterior);
   const variacionEur = calcularVariacion(bcv?.eur, bcv?.eur_anterior);
   const brecha = calcularBrecha(p2p?.precio, bcv?.usd);
+  const cargandoBcv = !listo || (capturando && bcv == null);
 
   return (
     <div className="space-y-4">
@@ -288,8 +293,7 @@ export function Calculadora({ tasaInicial, hoy }: Props) {
 
       {sinConexion ? (
         <Aviso icono={CloudOff} tono="ambar">
-          Sin conexión
-          {cacheUsada ? ` — tasas del ${formatearHora(cacheUsada)}` : ""}.
+          Sin conexión — usando las tasas guardadas en este teléfono.
         </Aviso>
       ) : null}
 
@@ -300,7 +304,7 @@ export function Calculadora({ tasaInicial, hoy }: Props) {
         </Aviso>
       ) : null}
 
-      {!bcv && !cargandoBcv ? (
+      {listo && !bcv && !capturando ? (
         <div className="border-border bg-card space-y-3 rounded-2xl border p-4">
           <p className="text-sm">No hay tasa registrada para esta fecha.</p>
           <Button
@@ -401,14 +405,11 @@ export function Calculadora({ tasaInicial, hoy }: Props) {
           variant="outline"
           size="sm"
           onClick={refrescar}
-          disabled={cargandoBcv || cargandoP2p}
+          disabled={capturando || cargandoP2p}
           className="rounded-lg"
         >
           <RefreshCw
-            className={cn(
-              "size-3.5",
-              (cargandoBcv || cargandoP2p) && "animate-spin",
-            )}
+            className={cn("size-3.5", (capturando || cargandoP2p) && "animate-spin")}
           />
           Refrescar
         </Button>

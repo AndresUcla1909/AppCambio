@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SelectorFecha } from "@/components/SelectorFecha";
+import { guardarTasa } from "@/lib/almacen/navegador";
 import { hoyCaracas, parsearMonto, type DiaISO } from "@/lib/formato";
 
 /**
- * Carga o corrección manual de una tasa, para rellenar los días que el cron
- * no capturó. Se guarda con `fuente = 'manual'`.
+ * Carga o corrección manual de una tasa, para rellenar los días en que no se
+ * abrió la app. Se guarda con `fuente = 'manual'`, en este mismo aparato.
  */
 export function FormularioTasa({ onGuardada }: { onGuardada: () => void }) {
   const [dia, setDia] = useState<DiaISO>(hoyCaracas());
@@ -18,7 +19,7 @@ export function FormularioTasa({ onGuardada }: { onGuardada: () => void }) {
   const [eur, setEur] = useState("");
   const [guardando, setGuardando] = useState(false);
 
-  async function enviar(evento: React.FormEvent) {
+  function enviar(evento: React.FormEvent) {
     evento.preventDefault();
 
     const usdNumero = parsearMonto(usd);
@@ -36,15 +37,13 @@ export function FormularioTasa({ onGuardada }: { onGuardada: () => void }) {
 
     setGuardando(true);
     try {
-      const respuesta = await fetch("/api/tasas", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fecha: dia, usd: usdNumero, eur: eurNumero }),
+      // Se guarda en este aparato, no en un servidor.
+      guardarTasa({
+        fecha: dia,
+        usd: usdNumero,
+        eur: eurNumero,
+        fuente: "manual",
       });
-      if (!respuesta.ok) {
-        const cuerpo = await respuesta.json().catch(() => ({}));
-        throw new Error(cuerpo.error ?? "No se pudo guardar");
-      }
       toast.success("Tasa guardada");
       setUsd("");
       setEur("");

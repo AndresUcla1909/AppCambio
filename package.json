@@ -11,7 +11,6 @@
     "probar:p2p": "tsx scripts/probar-p2p.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "capturar": "tsx scripts/capturar-bcv.ts",
     "tipos": "tsc --noEmit"
   },
   "dependencies": {

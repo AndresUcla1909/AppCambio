@@ -46,5 +46,3 @@ public/sw.js
 public/sw.js.map
 public/swe-worker-*.js
 
-# Datos locales de desarrollo
-datos/*.json
