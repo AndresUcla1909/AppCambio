@@ -46,3 +46,6 @@ public/sw.js
 public/sw.js.map
 public/swe-worker-*.js
 
+# Archivos del OCR, copiados desde node_modules por scripts/copiar-ocr.mjs
+public/ocr/
+

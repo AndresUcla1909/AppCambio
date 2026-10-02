@@ -15,7 +15,7 @@ npm run dev          # http://localhost:3000 (o el siguiente libre)
 
 | Comando | Para qué |
 | --- | --- |
-| `npm test` | 53 tests unitarios |
+| `npm test` | 76 tests unitarios |
 | `npm run tipos` | Chequeo de tipos |
 | `npm run build` | Build de producción (webpack, porque Serwist aún no soporta Turbopack) |
 | `npm run probar:bcv` | Muestra lo que devuelve el scraping. `-- --guardar` refresca el fixture |
@@ -58,6 +58,28 @@ Al instalar por primera vez se siembran dos tasas reales del BCV capturadas el
   Ojo: `transAmount` va en **bolívares**, no en USDT (comprobado: mandar `100`
   devuelve cero resultados). De ahí la consulta en dos pasos. El precio no se
   guarda en ningún lado; lo cachea el CDN una hora.
+
+## Modo cámara
+
+El botón **Cámara** de la calculadora abre la cámara trasera: se encuadra un
+precio en el recuadro y aparece convertido en vivo con la tasa elegida (USDT,
+Dólar o Euro BCV). Se puede indicar si el precio está en divisa o en
+bolívares, pausar la imagen y llevar el monto a la calculadora.
+
+- **Todo ocurre en el teléfono.** El texto lo lee Tesseract.js
+  (`lib/ocr/lector.ts`) dentro del navegador; la imagen no sale del aparato.
+- **Sus archivos se sirven desde la app**, en `public/ocr/`. Los copia
+  `scripts/copiar-ocr.mjs` desde `node_modules` en cada `npm install` y antes
+  de cada build; esa carpeta no va al repo.
+- **La primera vez descarga unos 7 MB** (motor + idioma). El service worker
+  los guarda en la caché `ocr-<versión>` y desde entonces funciona sin
+  conexión. No van en el precache para no hacer pesada la instalación.
+- **Cómo elige el precio** (`lib/ocr/precio.ts`, con tests): el número escrito
+  más grande del recuadro, ignorando medidas y porcentajes ("1kg", "500 g",
+  "20%"). Sólo cambia el resultado cuando la misma lectura se repite, para que
+  no parpadee.
+- **Necesita HTTPS** (o `localhost`): los navegadores no dan la cámara en una
+  conexión sin cifrar.
 
 ## Para instalarla en el iPhone
 

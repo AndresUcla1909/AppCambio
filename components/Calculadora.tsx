@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { CloudOff, Info, RefreshCw, Share2 } from "lucide-react";
+import { Camera, CloudOff, Info, RefreshCw, Share2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { ModoCamara, type OpcionTasa } from "@/components/camara/ModoCamara";
 import { CampoMonto } from "@/components/CampoMonto";
 import { SelectorFecha } from "@/components/SelectorFecha";
 import { TarjetaTasa } from "@/components/TarjetaTasa";
@@ -33,6 +34,7 @@ import {
   leerTasaPreferida,
   type TipoTasa,
 } from "@/lib/offline";
+import type { Direccion } from "@/lib/ocr/precio";
 import { cn } from "@/lib/utils";
 
 export function Calculadora() {
@@ -49,6 +51,8 @@ export function Calculadora() {
 
   const [seleccion, setSeleccion] = useState<TipoTasa>("bcv_usd");
   const [sinConexion, setSinConexion] = useState(false);
+  const [camaraAbierta, setCamaraAbierta] = useState(false);
+  const cerrarCamara = useCallback(() => setCamaraAbierta(false), []);
 
   const [usd, setUsd] = useState("");
   const [bs, setBs] = useState("");
@@ -179,6 +183,18 @@ export function Calculadora() {
         ? "Euro BCV"
         : "Dólar BCV";
 
+  // Las tasas que el modo cámara deja elegir: las mismas que hay en pantalla.
+  const tasasCamara: OpcionTasa[] = [];
+  if (usdtDisponible && p2p) {
+    tasasCamara.push({ tipo: "usdt", nombre: "USDT", valor: p2p.precio, moneda: "$" });
+  }
+  if (bcv) {
+    tasasCamara.push({ tipo: "bcv_usd", nombre: "Dólar BCV", valor: bcv.usd, moneda: "$" });
+  }
+  if (bcv?.eur) {
+    tasasCamara.push({ tipo: "bcv_eur", nombre: "Euro BCV", valor: bcv.eur, moneda: "€" });
+  }
+
   // Al cambiar la tasa se rehace el campo derivado a partir del que se editó.
   useEffect(() => {
     if (tasaActiva == null) return;
@@ -235,6 +251,14 @@ export function Calculadora() {
     guardarTasaPreferida(tipo);
   }
 
+  /** Lleva a la calculadora el precio que se leyó con la cámara. */
+  function usarDeCamara(monto: number, direccion: Direccion) {
+    const texto = formatearMonto(monto);
+    if (direccion === "divisa_a_bs") escribirUsd(texto);
+    else escribirBs(texto);
+    setCamaraAbierta(false);
+  }
+
   async function compartir() {
     const lineas = [
       `Tasas del ${formatearDia(bcv?.fecha ?? dia)}`,
@@ -278,16 +302,37 @@ export function Calculadora() {
     <div className="space-y-4">
       <header className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold tracking-tight">Calculadora</h1>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={compartir}
-          aria-label="Compartir tasas"
-          className="rounded-full"
-        >
-          <Share2 className="size-5" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            onClick={() => setCamaraAbierta(true)}
+            disabled={tasasCamara.length === 0}
+            className="rounded-full px-3"
+          >
+            <Camera className="size-4" />
+            Cámara
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={compartir}
+            aria-label="Compartir tasas"
+            className="rounded-full"
+          >
+            <Share2 className="size-5" />
+          </Button>
+        </div>
       </header>
+
+      {camaraAbierta ? (
+        <ModoCamara
+          tasas={tasasCamara}
+          seleccion={seleccionEfectiva}
+          onSeleccionar={elegir}
+          onUsar={usarDeCamara}
+          onCerrar={cerrarCamara}
+        />
+      ) : null}
 
       <SelectorFecha dia={dia} onCambiar={setDia} />
 

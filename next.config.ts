@@ -14,6 +14,10 @@ const conServiceWorker = withSerwistInit({
   // En desarrollo el service worker estorba: cachea y esconde los cambios.
   disable: process.env.NODE_ENV === "development",
   reloadOnOnline: true,
+  // Sólo los archivos sueltos de public/. El OCR del modo cámara (public/ocr/,
+  // ~15 MB) no se descarga al instalar: lo guarda el service worker la
+  // primera vez que se abre la cámara.
+  globPublicPatterns: ["*"],
 });
 
 /**
