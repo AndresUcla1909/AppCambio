@@ -15,7 +15,7 @@ npm run dev          # http://localhost:3000 (o el siguiente libre)
 
 | Comando | Para qué |
 | --- | --- |
-| `npm test` | 76 tests unitarios |
+| `npm test` | 114 tests (incluye el lector de precios con los modelos reales y el PDF de compras) |
 | `npm run tipos` | Chequeo de tipos |
 | `npm run build` | Build de producción (webpack, porque Serwist aún no soporta Turbopack) |
 | `npm run probar:bcv` | Muestra lo que devuelve el scraping. `-- --guardar` refresca el fixture |
@@ -66,20 +66,62 @@ precio en el recuadro y aparece convertido en vivo con la tasa elegida (USDT,
 Dólar o Euro BCV). Se puede indicar si el precio está en divisa o en
 bolívares, pausar la imagen y llevar el monto a la calculadora.
 
-- **Todo ocurre en el teléfono.** El texto lo lee Tesseract.js
-  (`lib/ocr/lector.ts`) dentro del navegador; la imagen no sale del aparato.
-- **Sus archivos se sirven desde la app**, en `public/ocr/`. Los copia
-  `scripts/copiar-ocr.mjs` desde `node_modules` en cada `npm install` y antes
-  de cada build; esa carpeta no va al repo.
-- **La primera vez descarga unos 7 MB** (motor + idioma). El service worker
-  los guarda en la caché `ocr-<versión>` y desde entonces funciona sin
-  conexión. No van en el precache para no hacer pesada la instalación.
-- **Cómo elige el precio** (`lib/ocr/precio.ts`, con tests): el número escrito
-  más grande del recuadro, ignorando medidas y porcentajes ("1kg", "500 g",
-  "20%"). Sólo cambia el resultado cuando la misma lectura se repite, para que
-  no parpadee.
+- **Todo ocurre en el teléfono.** El texto lo leen los modelos PP-OCRv6 tiny
+  de PaddleOCR (detección + reconocimiento, licencia Apache 2.0) con ONNX
+  Runtime Web, dentro de un worker (`lib/ocr/trabajador.ts`) para que la
+  imagen no se trabe. La foto no sale del aparato.
+- **Piezas** (todas en `lib/ocr/`, sin dependencias del navegador salvo el
+  worker y `lector.ts`): `deteccion.ts` encuentra los renglones,
+  `reconocimiento.ts` los lee, `geometria.ts` mide cada mancha de tinta,
+  `motor.ts` lo orquesta y `precio.ts` decide cuál es el precio.
+- **Cómo elige el precio** (con tests): el número escrito más grande del
+  recuadro, ignorando medidas, porcentajes y códigos de barras ("1kg",
+  "500 g", "20%"). A igual tamaño gana el que lleva moneda o céntimos. Los
+  céntimos pequeños ("5⁷⁹") se detectan por el tamaño de la tinta y se
+  vuelven a leer ampliados, porque el OCR tiende a pegarlos ("579"). En
+  pantalla sólo cambia cuando la misma lectura se repite, para que no
+  parpadee.
+- **Precisión medida**: 87 % de aciertos sobre 93 etiquetas (45 fotos reales
+  de Wikimedia Commons y 48 sintéticas al estilo venezolano, con desenfoque,
+  reflejos y perspectiva), contra 26 % del lector anterior (Tesseract). Falla
+  sobre todo con precios escritos a mano.
+- **Los modelos van en el repo** (`modelos/ocr/`, ~6 MB) y llevan su versión
+  en el nombre. `scripts/copiar-ocr.mjs` los copia a `public/ocr/` junto con
+  el motor WASM de `node_modules` en cada `npm install` y antes de cada
+  build; esa carpeta no va al repo.
+- **La primera vez descarga unos 10 MB.** El service worker los guarda en la
+  caché `ocr` y desde entonces funciona sin conexión. No van en el precache
+  para no hacer pesada la instalación. Si la cámara ya se usó, al abrir la
+  app el lector se carga en segundo plano para que esté listo al tocar
+  "Cámara".
 - **Necesita HTTPS** (o `localhost`): los navegadores no dan la cámara en una
   conexión sin cifrar.
+
+## Compras
+
+La pestaña **Compras** es un carrito para ir anotando precios en la tienda:
+escaneándolos con la cámara (el botón pasa a ser "Agregar al carrito" y la
+cámara queda abierta para el siguiente) o escribiéndolos a mano.
+
+- **Todo en $ y en Bs a la tasa BCV vigente.** Cada artículo guarda el precio
+  en la moneda en que estaba marcado; la otra se calcula al momento. Los
+  subtotales se redondean a céntimos y los totales los suman, para que cuadre
+  con lo que se ve renglón por renglón.
+- **Cantidades con decimales** (0,5 kg de queso) y nombre opcional (sin
+  nombre sale "Artículo N").
+- **Descuentos por porcentaje**, en cada artículo y a todo el carrito. Se
+  combinan: el general se aplica sobre lo que ya quedó con los descuentos de
+  cada artículo, como un descuento adicional en la caja. Se muestra cuánto se
+  ahorra.
+- **Exportar a PDF** con el título que se le ponga a la lista: tabla con
+  precios y subtotales en las dos monedas, descuentos, total y la tasa usada.
+  Lo genera jsPDF en el teléfono (también sin conexión); en el iPhone se
+  ofrece la hoja de compartir para guardarlo en Archivos o mandarlo.
+- **Se guarda en este teléfono** (`localStorage`) en cada cambio, así que no
+  se pierde si iOS cierra la app a mitad de la compra.
+
+La lógica (conversión, descuentos, totales) está en `lib/compras/logica.ts` y
+el PDF en `lib/compras/pdf.ts`, ambos con tests.
 
 ## Para instalarla en el iPhone
 

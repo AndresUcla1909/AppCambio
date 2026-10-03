@@ -1,0 +1,26 @@
+[
+  {
+    "archivo": "centimos-pequenos.rgba.gz",
+    "ancho": 432,
+    "alto": 228,
+    "precio": 2.49
+  },
+  {
+    "archivo": "bolivares-con-miles.rgba.gz",
+    "ancho": 432,
+    "alto": 228,
+    "precio": 1250
+  },
+  {
+    "archivo": "a-mano.rgba.gz",
+    "ancho": 432,
+    "alto": 228,
+    "precio": 7.5
+  },
+  {
+    "archivo": "dolar-pegado.rgba.gz",
+    "ancho": 432,
+    "alto": 228,
+    "precio": 4.99
+  }
+]

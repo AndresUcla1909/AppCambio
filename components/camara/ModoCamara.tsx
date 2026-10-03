@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Pause, Play, ScanLine, TriangleAlert, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { formatearMonto, formatearTasa } from "@/lib/formato";
 import type { TipoTasa } from "@/lib/offline";
@@ -25,20 +26,32 @@ export type OpcionTasa = {
   moneda: "$" | "€";
 };
 
+/** Qué hace el botón principal con el precio leído. */
+export type AccionCamara = {
+  etiqueta: string;
+  /** Lo que se muestra un momento después de usarlo ("¡Agregado!"). */
+  hecho?: string;
+  alUsar: (monto: number, direccion: Direccion) => void;
+};
+
 type Props = {
   tasas: OpcionTasa[];
   seleccion: TipoTasa;
   onSeleccionar: (tipo: TipoTasa) => void;
-  /** Lleva el precio leído a la calculadora. */
-  onUsar: (monto: number, direccion: Direccion) => void;
+  accion: AccionCamara;
+  /** Una línea sobre el botón (p. ej. lo que lleva el carrito). */
+  pie?: React.ReactNode;
   onCerrar: () => void;
 };
+
+/** Cuánto se bloquea el botón tras usarlo, para que un doble toque no cuente dos veces. */
+const ESPERA_TRAS_USAR_MS = 1200;
 
 /** Ancho máximo de la imagen que se pasa al OCR: más grande no lee mejor y tarda más. */
 const ANCHO_MAX_OCR = 1000;
 
 /** Respiro entre lecturas, para no recalentar el teléfono ni gastar batería. */
-const PAUSA_ENTRE_LECTURAS_MS = 150;
+const PAUSA_ENTRE_LECTURAS_MS = 60;
 
 /**
  * Modo cámara: se apunta a un precio y se ve al instante convertido con la
@@ -49,7 +62,8 @@ export function ModoCamara({
   tasas,
   seleccion,
   onSeleccionar,
-  onUsar,
+  accion,
+  pie,
   onCerrar,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -66,12 +80,15 @@ export function ModoCamara({
   const [pausado, setPausado] = useState(false);
   const [monto, setMonto] = useState<number | null>(null);
   const [direccion, setDireccion] = useState<Direccion>("divisa_a_bs");
+  const [recienUsado, setRecienUsado] = useState(false);
 
   const tasa = tasas.find((t) => t.tipo === seleccion) ?? tasas[0];
 
   // Mientras la cámara está abierta, la página de atrás no se desplaza y
-  // Escape la cierra (útil en la computadora).
+  // Escape la cierra (útil en la computadora). Los avisos que hubiera se
+  // quitan: salen arriba y tapan la X de cerrar.
   useEffect(() => {
+    toast.dismiss();
     const desbordePrevio = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const alTeclear = (evento: KeyboardEvent) => {
@@ -126,7 +143,7 @@ export function ModoCamara({
   }, []);
 
   // El lector se prepara a la vez que la cámara. La primera vez descarga
-  // unos 7 MB; después sale de la caché del teléfono.
+  // unos 10 MB; después sale de la caché del teléfono.
   useEffect(() => {
     let cancelado = false;
     obtenerLector()
@@ -167,8 +184,9 @@ export function ModoCamara({
             const lecturas = registrarLectura(lecturasRef.current, lectura);
             lecturasRef.current = lecturas;
             setMonto((anterior) => montoAMostrar(lecturas, anterior));
-          } catch {
+          } catch (error) {
             // Un cuadro que falla no detiene la lectura: se sigue con el próximo.
+            console.warn("[modo cámara] no se pudo leer el cuadro:", error);
           }
         }
         const transcurrido = performance.now() - inicio;
@@ -181,6 +199,17 @@ export function ModoCamara({
       activo = false;
     };
   }, [camaraLista, lectorListo, pausado]);
+
+  function usar() {
+    if (monto == null || recienUsado) return;
+    accion.alUsar(monto, direccion);
+    // Si la cámara sigue abierta (p. ej. agregando al carrito), se empieza
+    // de cero para el próximo precio.
+    lecturasRef.current = [];
+    setMonto(null);
+    setRecienUsado(true);
+    window.setTimeout(() => setRecienUsado(false), ESPERA_TRAS_USAR_MS);
+  }
 
   function alternarPausa() {
     const video = videoRef.current;
@@ -279,7 +308,7 @@ export function ModoCamara({
               <TriangleAlert className="mx-auto size-6 text-amber-300" />
               <p className="text-sm">{error}</p>
               <Button variant="outline" onClick={onCerrar} className="rounded-xl text-foreground">
-                Volver a la calculadora
+                Cerrar la cámara
               </Button>
             </div>
           ) : (
@@ -306,7 +335,8 @@ export function ModoCamara({
                   </>
                 ) : (
                   <p className="py-1 text-sm text-white/75">
-                    Encuadra el precio dentro del recuadro
+                    Encuadra el precio en el recuadro,
+                    <br />a un palmo de distancia
                   </p>
                 )}
               </div>
@@ -342,12 +372,18 @@ export function ModoCamara({
             ))}
           </div>
 
+          {pie ? (
+            <div className="mx-auto max-w-sm rounded-xl bg-black/55 px-3 py-2 text-center text-xs text-white/85 backdrop-blur">
+              {pie}
+            </div>
+          ) : null}
+
           <Button
-            onClick={() => monto != null && onUsar(monto, direccion)}
-            disabled={monto == null}
+            onClick={usar}
+            disabled={monto == null || recienUsado}
             className="mx-auto flex h-12 w-full max-w-sm rounded-xl bg-azul text-base text-white hover:bg-azul/85"
           >
-            Usar en la calculadora
+            {recienUsado && accion.hecho ? accion.hecho : accion.etiqueta}
           </Button>
         </div>
       </div>
@@ -434,7 +470,9 @@ function capturarMarco(
   const escala = Math.min(1, ANCHO_MAX_OCR / recorte.ancho);
   lienzo.width = Math.round(recorte.ancho * escala);
   lienzo.height = Math.round(recorte.alto * escala);
-  const contexto = lienzo.getContext("2d");
+  // Se leen sus píxeles en cada cuadro: así el navegador los deja en memoria
+  // normal en vez de en la GPU.
+  const contexto = lienzo.getContext("2d", { willReadFrequently: true });
   if (!contexto) return null;
 
   contexto.drawImage(

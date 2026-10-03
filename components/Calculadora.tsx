@@ -34,6 +34,7 @@ import {
   leerTasaPreferida,
   type TipoTasa,
 } from "@/lib/offline";
+import { precalentarLector } from "@/lib/ocr/lector";
 import type { Direccion } from "@/lib/ocr/precio";
 import { cn } from "@/lib/utils";
 
@@ -131,6 +132,7 @@ export function Calculadora() {
 
     void capturarBcv(hoy);
     void cargarP2p();
+    precalentarLector();
   }, [hoy, capturarBcv, cargarP2p]);
 
   // Cambiar de fecha sólo consulta el almacén local: es instantáneo.
@@ -329,7 +331,7 @@ export function Calculadora() {
           tasas={tasasCamara}
           seleccion={seleccionEfectiva}
           onSeleccionar={elegir}
-          onUsar={usarDeCamara}
+          accion={{ etiqueta: "Usar en la calculadora", alUsar: usarDeCamara }}
           onCerrar={cerrarCamara}
         />
       ) : null}

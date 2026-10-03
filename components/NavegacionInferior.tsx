@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Calculator, ChartLine, Settings } from "lucide-react";
+import { Calculator, ChartLine, Settings, ShoppingCart } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const PESTANAS = [
   { href: "/", etiqueta: "Inicio", Icono: Calculator },
+  { href: "/compras", etiqueta: "Compras", Icono: ShoppingCart },
   { href: "/historial", etiqueta: "Historial", Icono: ChartLine },
   { href: "/ajustes", etiqueta: "Ajustes", Icono: Settings },
 ] as const;
