@@ -79,7 +79,9 @@ export function ModoCamara({
   const [lectorListo, setLectorListo] = useState(false);
   const [pausado, setPausado] = useState(false);
   const [monto, setMonto] = useState<number | null>(null);
-  const [direccion, setDireccion] = useState<Direccion>("divisa_a_bs");
+  // Por defecto el precio está en bolívares, que es como lo marcan casi
+  // todas las tiendas; el de divisas queda a un toque.
+  const [direccion, setDireccion] = useState<Direccion>("bs_a_divisa");
   const [recienUsado, setRecienUsado] = useState(false);
 
   const tasa = tasas.find((t) => t.tipo === seleccion) ?? tasas[0];
@@ -352,8 +354,8 @@ export function ModoCamara({
           >
             {(
               [
-                ["divisa_a_bs", `Precio en ${tasa?.moneda ?? "$"}`],
                 ["bs_a_divisa", "Precio en Bs"],
+                ["divisa_a_bs", `Precio en ${tasa?.moneda ?? "$"}`],
               ] as const
             ).map(([valor, etiqueta]) => (
               <button
