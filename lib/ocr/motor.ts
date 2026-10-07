@@ -35,7 +35,7 @@ export type OpcionesLector = OpcionesDeteccion & {
   altoMinimo: number;
 };
 
-export const LECTOR: OpcionesLector = {
+const LECTOR: OpcionesLector = {
   ...DETECCION,
   maxRenglones: 8,
   altoMinimo: 0.3,

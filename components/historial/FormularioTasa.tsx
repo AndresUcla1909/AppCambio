@@ -6,21 +6,30 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SelectorFecha } from "@/components/SelectorFecha";
+import { DIAS_BUFFER } from "@/lib/config";
+import { enVentana, inicioVentana } from "@/lib/almacen/buffer";
 import { guardarTasa } from "@/lib/almacen/navegador";
 import { hoyCaracas, parsearMonto, type DiaISO } from "@/lib/formato";
 
 /**
  * Carga o corrección manual de una tasa, para rellenar los días en que no se
  * abrió la app. Se guarda con `fuente = 'manual'`, en este mismo aparato.
+ * Sólo dentro del búfer de 60 días: lo anterior se descartaría al instante.
  */
 export function FormularioTasa({ onGuardada }: { onGuardada: () => void }) {
-  const [dia, setDia] = useState<DiaISO>(hoyCaracas());
+  const [hoy] = useState<DiaISO>(hoyCaracas);
+  const [dia, setDia] = useState<DiaISO>(hoy);
   const [usd, setUsd] = useState("");
   const [eur, setEur] = useState("");
   const [guardando, setGuardando] = useState(false);
 
   function enviar(evento: React.FormEvent) {
     evento.preventDefault();
+
+    if (!enVentana(dia, hoy)) {
+      toast.error(`Solo se guardan los últimos ${DIAS_BUFFER} días`);
+      return;
+    }
 
     const usdNumero = parsearMonto(usd);
     if (usdNumero == null || usdNumero <= 0) {
@@ -62,7 +71,7 @@ export function FormularioTasa({ onGuardada }: { onGuardada: () => void }) {
     >
       <div className="space-y-1.5">
         <Label className="text-muted-foreground text-xs">Fecha valor</Label>
-        <SelectorFecha dia={dia} onCambiar={setDia} />
+        <SelectorFecha dia={dia} onCambiar={setDia} desde={inicioVentana(hoy)} />
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -100,7 +109,8 @@ export function FormularioTasa({ onGuardada }: { onGuardada: () => void }) {
         {guardando ? "Guardando…" : "Guardar tasa"}
       </Button>
       <p className="text-muted-foreground text-[11px]">
-        Si ya existe una tasa para esa fecha, se reemplaza.
+        Si ya existe una tasa para esa fecha, se reemplaza. El teléfono guarda
+        los últimos {DIAS_BUFFER} días.
       </p>
     </form>
   );

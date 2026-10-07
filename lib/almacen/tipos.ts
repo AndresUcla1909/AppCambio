@@ -35,6 +35,17 @@ export type TasaVigente = {
   es_exacta: boolean;
 };
 
+/**
+ * El USDT de un día, tal como se vio por última vez. No es una tasa oficial:
+ * sirve para mostrarlo sin conexión y para consultar días pasados.
+ */
+export type MuestraP2P = {
+  dia: DiaISO;
+  precio: number;
+  /** Cuándo se obtuvo, en ISO. */
+  obtenidoEn: string;
+};
+
 /** Lo que hay que aportar para guardar una tasa. */
 export type TasaNueva = {
   fecha: DiaISO;

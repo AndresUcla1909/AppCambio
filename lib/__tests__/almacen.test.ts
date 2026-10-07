@@ -228,4 +228,21 @@ describe("fundir", () => {
       fundir(FILAS, [masVieja]).find((f) => f.fecha === "2026-09-11")?.usd,
     ).toBe(832.4883);
   });
+
+  it("una fila más nueva sin euro no borra el euro conocido", () => {
+    // Como el historial del OVE: sólo dólar, cargado después.
+    const soloDolar = fila("2026-09-11", 832.4883, null, {
+      fuente: "api_respaldo",
+      actualizado_en: "2026-12-31T00:00:00.000Z",
+    });
+    const fundida = fundir(FILAS, [soloDolar]).find((f) => f.fecha === "2026-09-11");
+    expect(fundida?.fuente).toBe("api_respaldo");
+    expect(fundida?.eur).toBe(968.0673);
+  });
+
+  it("una fila vieja con euro completa a la más nueva que no lo tiene", () => {
+    const sinEuro = [fila("2026-09-11", 832.4883, null, { actualizado_en: "2026-12-31T00:00:00.000Z" })];
+    const conEuro = fila("2026-09-11", 832.4883, 968.0673);
+    expect(fundir(sinEuro, [conEuro])[0].eur).toBe(968.0673);
+  });
 });

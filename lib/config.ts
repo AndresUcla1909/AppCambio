@@ -23,6 +23,16 @@ export const USER_AGENT =
 /** Segundos que el CDN puede servir la respuesta P2P sin volver a pedirla. */
 export const CACHE_P2P_SEGUNDOS = 3600;
 
-/** Clave de localStorage donde se guardan las últimas tasas vistas (modo offline). */
-export const CLAVE_CACHE_OFFLINE = "tasas-offline-v1";
+/**
+ * Cuántos días de tasas (BCV y USDT) guarda el teléfono. Lo anterior se
+ * descarta solo; si hace falta, se consulta en Supabase cuando hay red.
+ */
+export const DIAS_BUFFER = 60;
+
+/**
+ * Si la tasa usada para una fecha tiene más días que estos, se avisa que está
+ * desactualizada. Cuatro cubre un fin de semana largo (viernes → martes).
+ */
+export const DIAS_MAX_SIN_ACTUALIZAR = 4;
+
 export const CLAVE_TASA_PREFERIDA = "tasa-preferida-v1";

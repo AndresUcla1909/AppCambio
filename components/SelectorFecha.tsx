@@ -17,9 +17,11 @@ import {
 type Props = {
   dia: DiaISO;
   onCambiar: (dia: DiaISO) => void;
+  /** Primer día que se puede elegir (p. ej. el inicio del búfer de 60 días). */
+  desde?: DiaISO;
 };
 
-export function SelectorFecha({ dia, onCambiar }: Props) {
+export function SelectorFecha({ dia, onCambiar, desde }: Props) {
   const [abierto, setAbierto] = useState(false);
   const hoy = hoyCaracas();
   const esHoy = dia === hoy;
@@ -35,7 +37,7 @@ export function SelectorFecha({ dia, onCambiar }: Props) {
         }
       >
           <CalendarDays className="text-muted-foreground size-4" />
-          <span className="capitalize">{formatearDiaLargo(dia)}</span>
+          <span className="first-letter:uppercase">{formatearDiaLargo(dia)}</span>
           {esHoy ? (
             <span className="bg-azul-tenue text-azul ml-auto rounded-full px-2 py-0.5 text-[11px] font-medium">
               Hoy
@@ -71,7 +73,11 @@ export function SelectorFecha({ dia, onCambiar }: Props) {
           selected={diaAFecha(dia)}
           defaultMonth={diaAFecha(dia)}
           // No hay tasas del futuro: el BCV publica como mucho el día hábil siguiente.
-          disabled={{ after: diaAFecha(hoy) }}
+          disabled={
+            desde
+              ? [{ after: diaAFecha(hoy) }, { before: diaAFecha(desde) }]
+              : { after: diaAFecha(hoy) }
+          }
           onSelect={(fecha) => {
             if (!fecha) return;
             onCambiar(fechaADia(fecha));

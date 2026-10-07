@@ -1,6 +1,6 @@
 import { defaultCache } from "@serwist/next/worker";
 import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
-import { CacheFirst, ExpirationPlugin, Serwist } from "serwist";
+import { CacheFirst, ExpirationPlugin, NetworkOnly, Serwist } from "serwist";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -27,6 +27,14 @@ const serwist = new Serwist({
   clientsClaim: true,
   navigationPreload: true,
   runtimeCaching: [
+    {
+      // Las tasas nunca salen de la caché del service worker: una respuesta
+      // vieja llegaría como si fuera de ahora. Sin red, la app usa su búfer
+      // de 60 días y lo dice. Vale para /api/ (BCV, USDT) y para Supabase.
+      matcher: ({ url, sameOrigin }) =>
+        sameOrigin ? url.pathname.startsWith("/api/") : url.pathname.startsWith("/rest/v1/"),
+      handler: new NetworkOnly(),
+    },
     {
       matcher: ({ url, sameOrigin }) =>
         sameOrigin && url.pathname.startsWith("/ocr/"),

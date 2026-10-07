@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Generados en el build (Serwist y el lector OCR); no son código fuente.
+    "public/sw.js",
+    "public/swe-worker-*.js",
+    "public/ocr/**",
   ]),
 ]);
 

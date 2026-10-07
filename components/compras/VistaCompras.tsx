@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Camera, FileDown, Plus, ShoppingCart, TriangleAlert, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -11,12 +11,10 @@ import { EntradaNumero } from "@/components/compras/EntradaNumero";
 import { FormularioArticulo } from "@/components/compras/FormularioArticulo";
 import { ModoCamara } from "@/components/camara/ModoCamara";
 import type { TasaBcv } from "@/lib/bcv/scraper";
-import {
-  guardarTasa,
-  obtenerTasaVigente,
-  sembrarSiHaceFalta,
-} from "@/lib/almacen/navegador";
+import { useFilasBuffer } from "@/lib/almacen/hooks";
+import { guardarTasa, rotarBuffer } from "@/lib/almacen/navegador";
 import type { TasaVigente } from "@/lib/almacen/tipos";
+import { resolverLocal } from "@/lib/tasas/resolver";
 import { guardarCarrito, leerCarrito } from "@/lib/compras/almacen";
 import {
   actualizar,
@@ -33,7 +31,7 @@ import {
   type Totales,
 } from "@/lib/compras/logica";
 import { bolivares, cantidad, dolares } from "@/lib/compras/mostrar";
-import { formatearDia, formatearTasa, hoyCaracas } from "@/lib/formato";
+import { formatearDia, formatearDiaCorto, formatearTasa, hoyCaracas } from "@/lib/formato";
 
 /**
  * Compras: un carrito para ir anotando precios en la tienda, escaneándolos
@@ -47,36 +45,32 @@ import { formatearDia, formatearTasa, hoyCaracas } from "@/lib/formato";
 export function VistaCompras() {
   const [hoy] = useState(hoyCaracas);
   const [carrito, setCarrito] = useState<Carrito>(leerCarrito);
-  const [tasa, setTasa] = useState<TasaVigente | null>(() => {
-    // Si es lo primero que se abre en este teléfono, que haya alguna tasa.
-    sembrarSiHaceFalta();
-    return obtenerTasaVigente(hoy);
-  });
+  // La tasa de hoy según el búfer; se actualiza sola al guardar una nueva.
+  const filas = useFilasBuffer();
+  const vigente = useMemo(() => (filas ? resolverLocal(filas, hoy, hoy) : null), [filas, hoy]);
+  const tasa = vigente?.tasa ?? null;
+  const desactualizada = vigente?.desactualizada ?? false;
   const [formularioAbierto, setFormularioAbierto] = useState(false);
   const [camaraAbierta, setCamaraAbierta] = useState(false);
   const [confirmandoVaciar, setConfirmandoVaciar] = useState(false);
   const [exportando, setExportando] = useState(false);
   const cerrarCamara = useCallback(() => setCamaraAbierta(false), []);
 
-  // Por si el BCV publicó algo más nuevo que lo guardado. Sin conexión se
-  // sigue con la tasa del teléfono.
+  // Lo que pasó de los 60 días, fuera; y por si el BCV publicó algo más
+  // nuevo que lo guardado. Sin conexión se sigue con la tasa del teléfono.
   useEffect(() => {
-    let cancelado = false;
+    rotarBuffer();
     (async () => {
       try {
         const respuesta = await fetch("/api/bcv", { cache: "no-store" });
         if (!respuesta.ok) return;
         const nueva = (await respuesta.json()) as TasaBcv;
         guardarTasa({ fecha: nueva.fecha, usd: nueva.usd, eur: nueva.eur, fuente: "bcv" });
-        if (!cancelado) setTasa(obtenerTasaVigente(hoy));
       } catch {
         /* sin conexión */
       }
     })();
-    return () => {
-      cancelado = true;
-    };
-  }, [hoy]);
+  }, []);
 
   const valorTasa = tasa?.usd ?? null;
   const suma = totales(carrito, valorTasa);
@@ -176,6 +170,7 @@ export function VistaCompras() {
         suma={suma}
         carrito={carrito}
         tasa={tasa}
+        desactualizada={desactualizada}
         onDescuento={(n) => cambiar(ponerDescuentoGeneral(carrito, n))}
       />
 
@@ -293,11 +288,14 @@ function Resumen({
   suma,
   carrito,
   tasa,
+  desactualizada,
   onDescuento,
 }: {
   suma: Totales;
   carrito: Carrito;
   tasa: TasaVigente | null;
+  /** La tasa tiene demasiados días: los bolívares pueden no cuadrar con la caja. */
+  desactualizada: boolean;
   onDescuento: (porcentaje: number) => void;
 }) {
   const ahorra = (suma.ahorro.usd ?? 0) > 0 || (suma.ahorro.bs ?? 0) > 0;
@@ -358,6 +356,13 @@ function Resumen({
           "Todavía no hay tasa BCV en este teléfono: abre la calculadora con conexión para obtenerla."
         )}
       </p>
+      {tasa && desactualizada ? (
+        <p className="flex items-start gap-2 text-xs text-amber-200">
+          <TriangleAlert className="mt-px size-3.5 shrink-0" />
+          Tasa desactualizada (del {formatearDiaCorto(tasa.fecha)}). Conéctate para
+          actualizarla: los montos en bolívares pueden no cuadrar con la caja.
+        </p>
+      ) : null}
     </section>
   );
 }

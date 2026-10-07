@@ -35,13 +35,13 @@ export type RenglonLeido = {
 export type Direccion = "divisa_a_bs" | "bs_a_divisa";
 
 /** Por debajo de esta confianza el renglón se descarta: suele ser ruido. */
-export const CONFIANZA_MINIMA = 55;
+const CONFIANZA_MINIMA = 55;
 
 /** Cuántas lecturas recientes se miran para decidir qué mostrar. */
 export const VENTANA_LECTURAS = 4;
 
 /** Cuántas veces tiene que repetirse un monto en esa ventana para mostrarlo. */
-export const REPETICIONES_MINIMAS = 2;
+const REPETICIONES_MINIMAS = 2;
 
 /** Un número encontrado en el texto, con el tramo de caracteres que ocupa. */
 type Numero = { monto: number; desde: number; hasta: number; conSeparador: boolean };
@@ -271,7 +271,7 @@ function monedaAlLado(texto: string, desde: number, hasta: number): boolean {
  * derecha. La posición de cada carácter es aproximada, así que se toma la
  * mancha si su centro cae en el tramo.
  */
-export function glifosDelTramo(
+function glifosDelTramo(
   renglon: RenglonLeido,
   desde: number,
   hasta: number,
