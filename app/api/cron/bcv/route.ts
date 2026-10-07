@@ -8,13 +8,24 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
+ * Tope de la función en Vercel. El peor caso es el BCV colgado (TIMEOUT_BCV_MS,
+ * 12 s) más leer y escribir en Supabase (5 s cada una): 22 s. Con 30 s siempre
+ * se alcanza a responder con el error en vez de que Vercel corte a ciegas.
+ */
+export const maxDuration = 30;
+
+/** Supabase está en la misma región que la función (São Paulo): responde rápido. */
+const TIMEOUT_SUPABASE_MS = 5000;
+
+/**
  * Captura programada: lee la tasa que publica el BCV y la guarda en Supabase.
  *
- * La llama Supabase Cron cada dos horas (supabase/cron-bcv.sql) con
- * `Authorization: Bearer <CRON_SECRET>`. Es idempotente: si la tasa ya está
- * guardada no escribe nada, así que llamarla de más no hace daño.
+ * La llama Vercel Cron de lunes a viernes (vercel.json), y opcionalmente
+ * Supabase Cron (supabase/cron-bcv.sql), con `Authorization: Bearer <CRON_SECRET>`.
+ * Es idempotente: si la tasa ya está guardada no escribe nada, así que
+ * llamarla de más no hace daño.
  *
- * Acepta GET y POST: pg_net llama con POST; GET sirve para probar a mano.
+ * Acepta GET y POST: Vercel Cron llama con GET y pg_net con POST.
  */
 
 const SIN_CACHE = { "Cache-Control": "no-store" };
@@ -55,7 +66,10 @@ async function capturar(peticion: Request) {
   }
 
   try {
-    const resultado = await guardarTasaBcv(tasa, hoyCaracas(), { config });
+    const resultado = await guardarTasaBcv(tasa, hoyCaracas(), {
+      config,
+      timeoutMs: TIMEOUT_SUPABASE_MS,
+    });
     if (resultado.accion === "rechazada") {
       // No es un fallo de red: hace falta que una persona lo mire.
       console.warn("[cron/bcv] tasa rechazada:", resultado.motivo, tasa);

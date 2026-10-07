@@ -13,6 +13,8 @@ export const POSICION_ANUNCIO = 2;
 export const METODOS_PAGO: string[] = [];
 
 export const URL_BCV = "https://www.bcv.org.ve/";
+/** El sitio del BCV a veces se cuelga: pasado este tiempo se da por caído. */
+export const TIMEOUT_BCV_MS = 12_000;
 export const URL_P2P =
   "https://p2p.binance.com/bapi/c2c/v2/friendly/c2c/adv/search";
 
