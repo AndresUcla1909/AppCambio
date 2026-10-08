@@ -16,9 +16,16 @@ import { hoyCaracas, parsearMonto, type DiaISO } from "@/lib/formato";
  * abrió la app. Se guarda con `fuente = 'manual'`, en este mismo aparato.
  * Sólo dentro del búfer de 60 días: lo anterior se descartaría al instante.
  */
-export function FormularioTasa({ onGuardada }: { onGuardada: () => void }) {
+export function FormularioTasa({
+  diaInicial,
+  onGuardada,
+}: {
+  /** La fecha con la que abre (p. ej. la que se miraba en la calculadora); hoy si no. */
+  diaInicial?: DiaISO;
+  onGuardada: () => void;
+}) {
   const [hoy] = useState<DiaISO>(hoyCaracas);
-  const [dia, setDia] = useState<DiaISO>(hoy);
+  const [dia, setDia] = useState<DiaISO>(diaInicial ?? hoy);
   const [usd, setUsd] = useState("");
   const [eur, setEur] = useState("");
   const [guardando, setGuardando] = useState(false);

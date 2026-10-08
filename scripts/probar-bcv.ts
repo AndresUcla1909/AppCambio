@@ -5,16 +5,14 @@
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { URL_BCV, USER_AGENT } from "../lib/config";
-import { parsearHtmlBcv } from "../lib/bcv/scraper";
+import { URL_BCV } from "../lib/config";
+import { descargarHtmlBcv, parsearHtmlBcv } from "../lib/bcv/scraper";
 
 async function main() {
   console.log(`Descargando ${URL_BCV} …`);
-  const respuesta = await fetch(URL_BCV, {
-    headers: { "User-Agent": USER_AGENT },
-  });
-  console.log(`HTTP ${respuesta.status} ${respuesta.statusText}`);
-  const html = await respuesta.text();
+  // La misma descarga que la app: con tiempo límite y el reintento para el
+  // certificado incompleto del BCV.
+  const html = await descargarHtmlBcv();
   console.log(`HTML recibido: ${html.length} caracteres\n`);
 
   if (process.argv.includes("--guardar")) {

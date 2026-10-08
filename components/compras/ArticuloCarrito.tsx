@@ -71,7 +71,9 @@ export function ArticuloCarrito({
         {convertido(unitario)}
       </p>
 
-      <div className="flex items-end justify-between gap-2 px-1.5">
+      {/* En pantallas angostas el subtotal no cabe junto a los controles: baja a
+          su propia línea, a la derecha, en vez de salirse de la tarjeta. */}
+      <div className="flex flex-wrap items-end justify-between gap-2 px-1.5">
         <div className="flex items-center gap-2">
           <div className="border-border flex items-center rounded-lg border">
             <button
@@ -114,11 +116,11 @@ export function ArticuloCarrito({
                 conDescuento && "text-verde font-medium",
               )}
             />
-            <span className="text-muted-foreground text-xs">% desc.</span>
+            <span className="text-muted-foreground text-xs whitespace-nowrap">% desc.</span>
           </label>
         </div>
 
-        <div className="text-right">
+        <div className="ml-auto min-w-0 text-right [overflow-wrap:anywhere]">
           {conDescuento ? (
             <p className="text-muted-foreground cifras text-[11px]">
               <span className="line-through">{original(subtotalSinDescuento(articulo, tasa))}</span>{" "}

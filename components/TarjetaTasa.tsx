@@ -43,7 +43,7 @@ export function TarjetaTasa({
       disabled={inactiva}
       aria-pressed={seleccionada}
       className={cn(
-        "relative flex w-full flex-col gap-1 rounded-2xl border p-4 text-left transition-all",
+        "relative flex w-full flex-col gap-1 rounded-2xl border p-4 text-left transition-all bajo:p-3",
         "focus-visible:ring-azul focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-background focus-visible:outline-none",
         seleccionada
           ? "border-azul bg-azul-tenue shadow-[0_0_0_1px_var(--azul)]"
@@ -57,9 +57,9 @@ export function TarjetaTasa({
       </span>
 
       {cargando ? (
-        <Skeleton className="my-1 h-7 w-28" />
+        <Skeleton className="my-1 h-7 w-28 bajo:h-6" />
       ) : (
-        <span className="cifras text-2xl leading-tight font-semibold">
+        <span className="cifras text-2xl leading-tight font-semibold bajo:text-xl">
           {formatearTasa(valor)}
         </span>
       )}

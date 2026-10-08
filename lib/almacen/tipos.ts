@@ -20,7 +20,7 @@ export type FilaTasaConVariacion = FilaTasa & {
 
 /**
  * Resultado de pedir "la tasa vigente el día X".
- * Equivale a la función `tasa_bcv_en(p_fecha)` del SPEC.
+ * Equivale a la función `tasa_bcv_en(p_fecha)` de Supabase (supabase/migrations/).
  */
 export type TasaVigente = {
   fecha: DiaISO;

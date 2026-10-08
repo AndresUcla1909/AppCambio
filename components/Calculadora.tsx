@@ -43,11 +43,8 @@ import {
   parsearMonto,
   type DiaISO,
 } from "@/lib/formato";
-import {
-  guardarTasaPreferida,
-  useTasaPreferida,
-  type TipoTasa,
-} from "@/lib/preferencias";
+import type { TipoTasa } from "@/lib/tasas/tipo";
+import { enlaceCargar } from "@/lib/historial/enlaceCarga";
 import { precalentarLector } from "@/lib/ocr/lector";
 import type { Direccion } from "@/lib/ocr/precio";
 import {
@@ -102,7 +99,6 @@ export function Calculadora() {
   const [cargandoP2p, setCargandoP2p] = useState(true);
   const [errorP2p, setErrorP2p] = useState<string | null>(null);
 
-  const preferida = useTasaPreferida();
   const [seleccion, setSeleccion] = useState<TipoTasa | null>(null);
   const [camaraAbierta, setCamaraAbierta] = useState(false);
   const cerrarCamara = useCallback(() => setCamaraAbierta(false), []);
@@ -247,7 +243,7 @@ export function Calculadora() {
   /* Tasa activa y cálculo                                             */
   /* ---------------------------------------------------------------- */
 
-  const seleccionBase: TipoTasa = seleccion ?? preferida ?? "bcv_usd";
+  const seleccionBase: TipoTasa = seleccion ?? "bcv_usd";
   const seleccionEfectiva: TipoTasa =
     seleccionBase === "usdt" && usdt == null ? "bcv_usd" : seleccionBase;
 
@@ -329,14 +325,8 @@ export function Calculadora() {
     }
   }
 
-  /** Tocar una tarjeta cambia la tasa del momento, no la de por defecto. */
+  /** Tocar una tarjeta cambia la tasa con la que se calcula. */
   function elegir(tipo: TipoTasa) {
-    setSeleccion(tipo);
-  }
-
-  /** Desde el menú: la guarda como tasa por defecto y la usa ya. */
-  function elegirPorDefecto(tipo: TipoTasa) {
-    guardarTasaPreferida(tipo);
     setSeleccion(tipo);
   }
 
@@ -407,21 +397,34 @@ export function Calculadora() {
       : "Sin registro ese día";
 
   return (
-    <div className="space-y-4">
-      <header className="flex items-center justify-between">
-        <div className="flex items-center gap-1">
-          <MenuLateral preferida={preferida} onElegir={elegirPorDefecto} />
-          <h1 className="text-2xl font-semibold tracking-tight">Calculadora</h1>
+    <div className="space-y-4 bajo:space-y-3">
+      {/* Refrescar va aquí arriba: al pie quedaba bajo la barra en pantallas bajas
+          (iPhone SE). En las angostas, Cámara queda sólo con su ícono. */}
+      <header className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1">
+          <MenuLateral />
+          <h1 className="truncate text-2xl font-semibold tracking-tight max-[359px]:text-xl">Calculadora</h1>
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <Button
             variant="outline"
             onClick={() => setCamaraAbierta(true)}
             disabled={tasasCamara.length === 0}
-            className="rounded-full px-3"
+            aria-label="Cámara"
+            className="rounded-full px-3 max-[399px]:size-9 max-[399px]:px-0"
           >
             <Camera className="size-4" />
-            Cámara
+            <span className="max-[399px]:hidden">Cámara</span>
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={refrescar}
+            disabled={capturando || cargandoP2p}
+            aria-label="Refrescar tasas"
+            className="rounded-full"
+          >
+            <RefreshCw className={cn("size-5", (capturando || cargandoP2p) && "animate-spin")} />
           </Button>
           <Button
             variant="ghost"
@@ -488,7 +491,7 @@ export function Calculadora() {
           <div className="border-border bg-card space-y-3 rounded-2xl border p-4">
             <p className="text-sm">No hay tasa registrada para esta fecha.</p>
             <Button
-              render={<Link href="/historial#cargar" />}
+              render={<Link href={enlaceCargar(dia)} />}
               size="sm"
               className="rounded-lg"
             >
@@ -498,7 +501,7 @@ export function Calculadora() {
         )
       ) : null}
 
-      <div className="space-y-3">
+      <div className="space-y-3 bajo:space-y-2">
         <TarjetaTasa
           titulo="USDT · Binance P2P"
           valor={usdt?.precio ?? null}
@@ -511,7 +514,7 @@ export function Calculadora() {
           deshabilitada={motivoSinUsdt}
         />
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 bajo:gap-2">
           <TarjetaTasa
             titulo="Dólar BCV"
             valor={bcv?.usd ?? null}
@@ -531,7 +534,7 @@ export function Calculadora() {
         </div>
       </div>
 
-      <div className="border-border bg-card space-y-3 rounded-2xl border p-4">
+      <div className="border-border bg-card space-y-3 rounded-2xl border p-4 bajo:space-y-2 bajo:p-3">
         <CampoMonto
           id="campo-divisa"
           etiqueta={seleccionEfectiva === "bcv_eur" ? "Euros" : "Dólares"}
@@ -564,38 +567,24 @@ export function Calculadora() {
         </p>
       </div>
 
-      <footer className="text-muted-foreground flex items-center justify-between gap-2 text-[11px]">
-        <div className="space-y-0.5">
-          <p>
-            Act. BCV: {formatearDia(bcv?.fecha)}
-            {resultado?.origen === "supabase" ? " · historial en línea" : ""}
-          </p>
-          <p>
-            Act. USDT:{" "}
-            {usdt
-              ? // Si no es de hoy, con fecha: una hora sola engaña.
-                diaEnCaracas(new Date(usdt.obtenidoEn)) === hoy
-                ? formatearHora(usdt.obtenidoEn)
-                : formatearInstante(usdt.obtenidoEn)
-              : esHoy
-                ? errorP2p
-                  ? "no disponible"
-                  : "…"
-                : "—"}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={refrescar}
-          disabled={capturando || cargandoP2p}
-          className="rounded-lg"
-        >
-          <RefreshCw
-            className={cn("size-3.5", (capturando || cargandoP2p) && "animate-spin")}
-          />
-          Refrescar
-        </Button>
+      <footer className="text-muted-foreground space-y-0.5 text-[11px]">
+        <p>
+          Act. BCV: {formatearDia(bcv?.fecha)}
+          {resultado?.origen === "supabase" ? " · historial en línea" : ""}
+        </p>
+        <p>
+          Act. USDT:{" "}
+          {usdt
+            ? // Si no es de hoy, con fecha: una hora sola engaña.
+              diaEnCaracas(new Date(usdt.obtenidoEn)) === hoy
+              ? formatearHora(usdt.obtenidoEn)
+              : formatearInstante(usdt.obtenidoEn)
+            : esHoy
+              ? errorP2p
+                ? "no disponible"
+                : "…"
+              : "—"}
+        </p>
       </footer>
     </div>
   );
@@ -648,7 +637,7 @@ function Aviso({
       className={cn(
         "flex items-start gap-2 rounded-xl border px-3 py-2 text-xs",
         tono === "ambar"
-          ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+          ? "border-amber-500/30 bg-amber-500/10 text-aviso"
           : "border-border bg-card text-muted-foreground",
       )}
     >

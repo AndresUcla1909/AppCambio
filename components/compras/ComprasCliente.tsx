@@ -15,7 +15,7 @@ const VistaCompras = dynamic(
     ssr: false,
     loading: () => (
       <div className="space-y-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Compras</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Carrito</h1>
         <Skeleton className="h-11 rounded-xl" />
         <Skeleton className="h-40 rounded-2xl" />
       </div>

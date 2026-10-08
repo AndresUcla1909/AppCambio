@@ -10,9 +10,9 @@ import type {
  * Lógica del historial, sin depender de dónde estén guardadas las filas.
  *
  * Son funciones puras: reciben el arreglo de filas y devuelven uno nuevo.
- * Reproducen lo que en el SPEC original hacía Postgres (la vista con `lag()`
- * y la función `tasa_bcv_en`), para que el resultado sea el mismo ahora que
- * los datos viven en el navegador.
+ * Reproducen lo que hace Postgres en Supabase (la vista con `lag()` y la
+ * función `tasa_bcv_en`, ver supabase/migrations/), para que el resultado sea
+ * el mismo con los datos del búfer del teléfono.
  */
 
 /** Ordena de la fecha más antigua a la más reciente. */

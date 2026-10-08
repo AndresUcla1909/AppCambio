@@ -194,7 +194,7 @@ export function generarPdf(
 
 /** El título del carrito, o uno con la fecha si no tiene. */
 export function tituloDe(carrito: Carrito): string {
-  return carrito.titulo.trim() || `Compras del ${formatearDia(hoyCaracas())}`;
+  return carrito.titulo.trim() || `Carrito del ${formatearDia(hoyCaracas())}`;
 }
 
 /** Nombre del archivo: el título sin acentos ni símbolos, y la fecha. */

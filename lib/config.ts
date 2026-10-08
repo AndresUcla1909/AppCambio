@@ -6,7 +6,7 @@ export const ZONA_HORARIA = "America/Caracas";
 /** Cuántos USDT se simulan vender para estimar el precio P2P. */
 export const MONTO_USDT = 100;
 
-/** Qué anuncio de la lista tomar (1 = el primero). El SPEC pide el segundo. */
+/** Qué anuncio de la lista tomar (1 = el primero). Se usa el segundo; si sólo hay uno, ése. */
 export const POSICION_ANUNCIO = 2;
 
 /** Filtro de métodos de pago de Binance. Vacío = todos. Ej: ["PagoMovil"]. */
@@ -37,4 +37,3 @@ export const DIAS_BUFFER = 60;
  */
 export const DIAS_MAX_SIN_ACTUALIZAR = 4;
 
-export const CLAVE_TASA_PREFERIDA = "tasa-preferida-v1";

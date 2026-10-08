@@ -38,8 +38,10 @@ export function CampoMonto({
   }
 
   return (
-    <div className="space-y-1.5">
-      <Label htmlFor={id} className="text-muted-foreground text-xs font-medium">
+    <div className="space-y-1.5 muybajo:space-y-0">
+      {/* En pantallas muy bajas sólo se oculta a la vista: el símbolo del campo
+          ($, €, Bs) ya dice qué moneda es, y el lector de pantalla lo sigue leyendo. */}
+      <Label htmlFor={id} className="text-muted-foreground text-xs font-medium muybajo:sr-only">
         {etiqueta}
       </Label>
       <div className="relative">
@@ -62,7 +64,7 @@ export function CampoMonto({
           enterKeyHint="done"
           placeholder="0,00"
           className={cn(
-            "cifras h-14 rounded-xl pr-12 pl-11 text-lg font-semibold md:text-lg",
+            "cifras h-14 rounded-xl pr-12 pl-11 text-lg font-semibold md:text-lg bajo:h-12",
             destacado && "border-azul",
           )}
         />

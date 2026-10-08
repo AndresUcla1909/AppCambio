@@ -1,7 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { CloudOff, Download, Plus } from "lucide-react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  CloudOff,
+  Download,
+  Plus,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,10 +24,19 @@ import {
 import { GraficoHistorial } from "@/components/historial/GraficoHistorial";
 import { FormularioTasa } from "@/components/historial/FormularioTasa";
 import { DIAS_BUFFER } from "@/lib/config";
+import { leerEnlaceCargar } from "@/lib/historial/enlaceCarga";
 import { useEnLinea, useFilasBuffer } from "@/lib/almacen/hooks";
 import { fundir, historial } from "@/lib/almacen/logica";
 import type { FilaTasa } from "@/lib/almacen/tipos";
 import { configSupabase, consultarRango } from "@/lib/supabase/tasas";
+import {
+  FILAS_POR_DEFECTO,
+  OPCIONES_FILAS,
+  esFilasPorPagina,
+  paginar,
+  type FilasPorPagina,
+  type Pagina,
+} from "@/lib/historial/paginacion";
 import {
   calcularVariacion,
   formatearDia,
@@ -45,6 +63,15 @@ const NOMBRE_FUENTE: Record<string, string> = {
   manual: "Manual",
 };
 
+function suscribirHash(alCambiar: () => void): () => void {
+  window.addEventListener("hashchange", alCambiar);
+  return () => window.removeEventListener("hashchange", alCambiar);
+}
+
+function leerHash(): string {
+  return location.hash;
+}
+
 /** Lo que respondió Supabase para un rango. */
 type Remotas = { rango: ClaveRango; filas: FilaTasa[] } | { rango: ClaveRango; error: true };
 
@@ -55,7 +82,21 @@ export function VistaHistorial() {
   const conSupabase = configSupabase() != null;
   const [rango, setRango] = useState<ClaveRango>("30");
   const [remotas, setRemotas] = useState<Remotas | null>(null);
-  const [mostrarFormulario, setMostrarFormulario] = useState(false);
+  // El formulario abre solo si se llegó desde "Cargarla manualmente" de la
+  // calculadora (#cargar=fecha); después manda lo que toque la persona.
+  const pedidoCarga = leerEnlaceCargar(useSyncExternalStore(suscribirHash, leerHash, () => ""));
+  const [formularioElegido, setFormularioElegido] = useState<boolean | null>(null);
+  const mostrarFormulario = formularioElegido ?? pedidoCarga != null;
+
+  function cambiarFormulario(abierto: boolean) {
+    setFormularioElegido(abierto);
+    // Que recargar la página no lo vuelva a abrir.
+    if (pedidoCarga) history.replaceState(null, "", location.pathname);
+  }
+  // La tabla va por páginas: con 60 filas o más se hacía eterna. Siempre abre
+  // con 5 filas; lo que se elija dura mientras se está en la pantalla.
+  const [pagina, setPagina] = useState(1);
+  const [porPagina, setPorPagina] = useState<FilasPorPagina>(FILAS_POR_DEFECTO);
 
   const dias = RANGOS.find((r) => r.clave === rango)?.dias ?? null;
   const desde = dias == null ? null : restarDias(hoyCaracas(), dias);
@@ -105,6 +146,8 @@ export function VistaHistorial() {
     () => (desde ? filas.filter((f) => f.fecha >= desde) : filas),
     [filas, desde],
   );
+
+  const vista = paginar(filasDelRango, pagina, porPagina);
 
   // Por qué no se ve más allá de los 60 días, si es el caso.
   const avisoRango = !excedeBuffer || remotasDelRango
@@ -166,7 +209,7 @@ export function VistaHistorial() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => setMostrarFormulario((abierto) => !abierto)}
+            onClick={() => cambiarFormulario(!mostrarFormulario)}
             aria-label="Agregar o editar tasa"
             aria-expanded={mostrarFormulario}
             className="rounded-full"
@@ -181,12 +224,13 @@ export function VistaHistorial() {
         </div>
       </header>
 
-      <div id="cargar" className="scroll-mt-4">
-        {mostrarFormulario ? (
-          // La tabla se actualiza sola al guardar: lee el búfer como estado.
-          <FormularioTasa onGuardada={() => setMostrarFormulario(false)} />
-        ) : null}
-      </div>
+      {mostrarFormulario ? (
+        // La tabla se actualiza sola al guardar: lee el búfer como estado.
+        <FormularioTasa
+          diaInicial={pedidoCarga?.dia ?? undefined}
+          onGuardada={() => cambiarFormulario(false)}
+        />
+      ) : null}
 
       {!listo ? null : filas.length === 0 ? (
         <p className="text-muted-foreground border-border bg-card rounded-2xl border p-6 text-center text-sm">
@@ -200,7 +244,10 @@ export function VistaHistorial() {
               <button
                 key={clave}
                 type="button"
-                onClick={() => setRango(clave)}
+                onClick={() => {
+                  setRango(clave);
+                  setPagina(1);
+                }}
                 aria-pressed={rango === clave}
                 className={cn(
                   "flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors",
@@ -231,11 +278,12 @@ export function VistaHistorial() {
                   <TableHead className="text-right text-xs">USD</TableHead>
                   <TableHead className="text-right text-xs">EUR</TableHead>
                   <TableHead className="text-right text-xs">Var.</TableHead>
-                  <TableHead className="text-right text-xs">Fuente</TableHead>
+                  {/* Bajo 375 px no cabe: es el dato menos útil (casi siempre "BCV"). */}
+                  <TableHead className="text-right text-xs max-[374px]:hidden">Fuente</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filasDelRango.map((fila) => {
+                {vista.filas.map((fila) => {
                   const variacion = calcularVariacion(fila.usd, fila.usd_anterior);
                   return (
                     <TableRow key={fila.fecha}>
@@ -262,7 +310,7 @@ export function VistaHistorial() {
                       >
                         {formatearPorcentaje(variacion)}
                       </TableCell>
-                      <TableCell className="text-muted-foreground text-right text-[11px]">
+                      <TableCell className="text-muted-foreground text-right text-[11px] max-[374px]:hidden">
                         {NOMBRE_FUENTE[fila.fuente] ?? fila.fuente}
                       </TableCell>
                     </TableRow>
@@ -271,6 +319,16 @@ export function VistaHistorial() {
               </TableBody>
             </Table>
           </div>
+
+          <Paginacion
+            vista={vista}
+            porPagina={porPagina}
+            onPagina={setPagina}
+            onPorPagina={(n) => {
+              setPorPagina(n);
+              setPagina(1);
+            }}
+          />
 
           <p className="text-muted-foreground text-center text-[11px]">
             {filasDelRango.length} de {filas.length} publicaciones ·{" "}
@@ -281,5 +339,103 @@ export function VistaHistorial() {
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Debajo de la tabla: cuántas filas mostrar y los botones de página. En
+ * pantallas angostas los dos grupos bajan a renglones distintos.
+ */
+function Paginacion<T>({
+  vista,
+  porPagina,
+  onPagina,
+  onPorPagina,
+}: {
+  vista: Pagina<T>;
+  porPagina: number;
+  onPagina: (pagina: number) => void;
+  onPorPagina: (filas: FilasPorPagina) => void;
+}) {
+  // Con menos filas que la opción más chica, no hay nada que elegir.
+  if (vista.total <= OPCIONES_FILAS[0]) return null;
+
+  return (
+    <nav aria-label="Páginas del historial" className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+      {/* Select nativo: en el teléfono abre el selector del sistema. */}
+      <label className="text-muted-foreground flex items-center gap-2 text-[11px]">
+        Filas
+        <span className="relative">
+          <select
+            value={porPagina}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              if (esFilasPorPagina(n)) onPorPagina(n);
+            }}
+            className={cn(
+              "cifras border-border bg-card text-foreground h-9 appearance-none rounded-lg border py-0 pr-7 pl-3 text-xs font-medium",
+              "focus-visible:ring-azul focus-visible:ring-2 focus-visible:outline-none",
+            )}
+          >
+            {OPCIONES_FILAS.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+          <ChevronDown className="text-muted-foreground pointer-events-none absolute top-1/2 right-2 size-3.5 -translate-y-1/2" />
+        </span>
+      </label>
+
+      {/* « » saltan al principio y al final: con "Todo" son más de cien páginas. */}
+      <div className="flex items-center">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onPagina(1)}
+          disabled={vista.pagina <= 1}
+          aria-label="Primera página"
+          className="rounded-full"
+        >
+          <ChevronsLeft className="size-5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onPagina(vista.pagina - 1)}
+          disabled={vista.pagina <= 1}
+          aria-label="Página anterior"
+          className="rounded-full"
+        >
+          <ChevronLeft className="size-5" />
+        </Button>
+        <span className="cifras text-muted-foreground min-w-20 text-center text-xs" aria-live="polite">
+          <span className="text-foreground font-medium">
+            {vista.desde}–{vista.hasta}
+          </span>{" "}
+          de {vista.total}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onPagina(vista.pagina + 1)}
+          disabled={vista.pagina >= vista.totalPaginas}
+          aria-label="Página siguiente"
+          className="rounded-full"
+        >
+          <ChevronRight className="size-5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onPagina(vista.totalPaginas)}
+          disabled={vista.pagina >= vista.totalPaginas}
+          aria-label="Última página"
+          className="rounded-full"
+        >
+          <ChevronsRight className="size-5" />
+        </Button>
+      </div>
+    </nav>
   );
 }

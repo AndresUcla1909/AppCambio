@@ -11,7 +11,7 @@ import { parsearMonto } from "@/lib/formato";
 import { cn } from "@/lib/utils";
 
 /**
- * Carga a mano de un artículo: para lo que no se puede escanear o cuando el
+ * Agregar un artículo escribiendo sus datos: para lo que no se puede escanear o cuando el
  * precio está escrito en una pizarra ilegible.
  */
 export function FormularioArticulo({

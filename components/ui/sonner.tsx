@@ -1,13 +1,15 @@
 "use client"
 
 import { Toaster as Sonner, type ToasterProps } from "sonner"
+import { useTema } from "@/lib/useTema"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
 
-// La app es siempre oscura (`dark` fijo en <html>): los avisos también.
+// Los avisos siguen el tema elegido en la app, no el del sistema.
 const Toaster = ({ ...props }: ToasterProps) => {
+  const { oscuro } = useTema()
   return (
     <Sonner
-      theme="dark"
+      theme={oscuro ? "dark" : "light"}
       className="toaster group"
       icons={{
         success: (

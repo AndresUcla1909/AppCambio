@@ -32,7 +32,7 @@ export function SelectorFecha({ dia, onCambiar, desde }: Props) {
         render={
           <Button
             variant="outline"
-            className="h-11 w-full justify-start gap-2 rounded-xl text-sm font-normal"
+            className="h-11 w-full justify-start gap-2 rounded-xl text-sm font-normal bajo:h-10"
           />
         }
       >

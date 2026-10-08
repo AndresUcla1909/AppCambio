@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
+import { AplicarTema } from "@/components/AplicarTema";
+import { COLOR_BARRA, scriptTema } from "@/lib/tema";
 import "./globals.css";
 
 const geist = Geist({
@@ -24,7 +26,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#111114",
+  // El script de tema lo cambia al claro si hace falta.
+  themeColor: COLOR_BARRA.oscuro,
   width: "device-width",
   initialScale: 1,
   // Evita el zoom al enfocar un campo, que en iOS descoloca la pantalla.
@@ -40,8 +43,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es-VE" className={`${geist.variable} dark h-full antialiased`}>
+    // `dark` es el tema por defecto; el script lo quita antes de pintar si se
+    // eligió el claro. Por eso <html> puede no coincidir con el HTML estático.
+    <html lang="es-VE" className={`${geist.variable} dark h-full antialiased`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: scriptTema() }} />
+      </head>
       <body className="bg-background text-foreground min-h-full">
+        <AplicarTema />
         {children}
         <Toaster position="top-center" richColors />
       </body>

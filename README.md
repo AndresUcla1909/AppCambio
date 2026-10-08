@@ -4,8 +4,6 @@ PWA personal para consultar el dólar y el euro del BCV, el precio del USDT en
 Binance P2P, y convertir entre divisas y bolívares. Todo el texto va en español
 (Venezuela) y la zona horaria de negocio es `America/Caracas`.
 
-Especificación original: [SPEC.md](./SPEC.md).
-
 ## Cómo correrla
 
 ```bash
@@ -15,7 +13,7 @@ npm run dev          # http://localhost:3000 (o el siguiente libre)
 
 | Comando | Para qué |
 | --- | --- |
-| `npm test` | 167 tests (incluye el lector de precios con los modelos reales y el PDF de compras) |
+| `npm test` | 202 tests (incluye el lector de precios con los modelos reales y el PDF de compras) |
 | `npm run tipos` | Chequeo de tipos |
 | `npm run build` | Build de producción (webpack, porque Serwist aún no soporta Turbopack) |
 | `npm run probar:bcv` | Muestra lo que devuelve el scraping. `-- --guardar` refresca el fixture |
@@ -52,9 +50,8 @@ Consecuencias que conviene tener presentes:
    app abre sin conexión. Las respuestas de `/api/*` y de Supabase nunca salen
    de su caché: una tasa vieja no debe pasar por actual.
 
-La **tasa por defecto** (la que queda seleccionada al abrir la app) se elige
-en el menú lateral de la calculadora (`components/MenuLateral.tsx`); tocar
-una tarjeta cambia la tasa del momento, no la de por defecto.
+La calculadora abre siempre con el **Dólar BCV**; tocar una tarjeta cambia la
+tasa con la que se calcula.
 
 ## Fuentes
 
@@ -111,9 +108,9 @@ bolívares, pausar la imagen y llevar el monto a la calculadora.
 - **Necesita HTTPS** (o `localhost`): los navegadores no dan la cámara en una
   conexión sin cifrar.
 
-## Compras
+## Carrito
 
-La pestaña **Compras** es un carrito para ir anotando precios en la tienda:
+La pestaña **Carrito** sirve para ir anotando precios en la tienda:
 escaneándolos con la cámara (el botón pasa a ser "Agregar al carrito" y la
 cámara queda abierta para el siguiente) o escribiéndolos a mano.
 
@@ -141,7 +138,8 @@ el PDF en `lib/compras/pdf.ts`, ambos con tests.
 
 Hace falta desplegarla: iOS solo registra service workers sobre HTTPS, y el
 teléfono no alcanza el `localhost` de la PC. Con el repo conectado a Vercel
-basta; no hace falta ninguna base de datos.
+basta. Supabase es opcional: sin él la app funciona con los 60 días que guarda
+el teléfono.
 
 Después, en Safari: **Compartir → Agregar a inicio**.
 
@@ -152,16 +150,19 @@ de 2021 (`supabase/seed-bcv-2021.sql`). Para que siga creciendo solo, aunque
 nadie abra la app:
 
 ```
-Supabase Cron (cada 2 h) ──► POST /api/cron/bcv  (Authorization: Bearer CRON_SECRET)
-                                  └─► lee bcv.org.ve y guarda en tasas_bcv con la secret key
+Vercel Cron (lun–vie, 21:00 UTC = 5 p. m. Caracas) ──► GET /api/cron/bcv  (Authorization: Bearer CRON_SECRET)
+                                                          └─► lee bcv.org.ve y guarda en tasas_bcv con la secret key
 ```
 
 - `app/api/cron/bcv/route.ts` + `lib/supabase/escritura.ts` (con tests). Es
   idempotente: si la tasa ya está guardada no escribe. No guarda una tasa con
   un salto de más del 25 % frente a la anterior ni con una fecha absurda:
   responde 422 para que alguien lo revise.
-- `supabase/cron-bcv.sql` programa la llamada con pg_cron + pg_net y guarda
-  la URL y el secreto en el Vault.
+- `vercel.json` programa la llamada diaria. Vercel manda el `CRON_SECRET`
+  solo, como Bearer, si la variable está definida en el proyecto.
+- Respaldo opcional: `supabase/cron-bcv.sql` la repite cada 2 h desde
+  Supabase (pg_cron + pg_net, con la URL y el secreto en el Vault). Como el
+  endpoint no escribe si la tasa ya está, los dos pueden convivir.
 
 ## Variables de entorno
 

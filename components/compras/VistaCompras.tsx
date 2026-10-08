@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Camera, FileDown, Plus, ShoppingCart, TriangleAlert, X } from "lucide-react";
+import { Camera, FileDown, Loader2, Plus, ShoppingCart, TriangleAlert, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,7 +34,7 @@ import { bolivares, cantidad, dolares } from "@/lib/compras/mostrar";
 import { formatearDia, formatearDiaCorto, formatearTasa, hoyCaracas } from "@/lib/formato";
 
 /**
- * Compras: un carrito para ir anotando precios en la tienda, escaneándolos
+ * Carrito: para ir anotando precios en la tienda, escaneándolos
  * con la cámara o escribiéndolos, con todo en dólares y en bolívares a la
  * tasa del BCV. Admite descuentos por artículo y a todo el carrito, y se
  * exporta a PDF con un título.
@@ -136,17 +136,16 @@ export function VistaCompras() {
   return (
     <div className="space-y-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Compras</h1>
-        {/* También arriba: con un carrito largo, el botón de abajo queda lejos. */}
+        <h1 className="text-2xl font-semibold tracking-tight">Carrito</h1>
         {carrito.articulos.length > 0 ? (
           <Button
             variant="outline"
             onClick={exportarPdf}
             disabled={exportando}
-            aria-label="Exportar a PDF"
+            aria-label={exportando ? "Generando el PDF" : "Exportar a PDF"}
             className="rounded-full px-3"
           >
-            <FileDown className="size-4" />
+            {exportando ? <Loader2 className="size-4 animate-spin" /> : <FileDown className="size-4" />}
             PDF
           </Button>
         ) : null}
@@ -160,7 +159,7 @@ export function VistaCompras() {
           id="carrito-titulo"
           value={carrito.titulo}
           onChange={(e) => cambiar(ponerTitulo(carrito, e.target.value))}
-          placeholder={`Compras del ${formatearDia(hoy)}`}
+          placeholder={`Carrito del ${formatearDia(hoy)}`}
           autoComplete="off"
           className="h-11 rounded-xl"
         />
@@ -189,8 +188,9 @@ export function VistaCompras() {
           aria-expanded={formularioAbierto}
           className="h-11 rounded-xl"
         >
-          {formularioAbierto ? <X className="size-4" /> : <Plus className="size-4" />}
-          {formularioAbierto ? "Cerrar" : "A mano"}
+          {/* En pantallas de 320 px el "+" no deja aire al texto. */}
+          {formularioAbierto ? <X className="size-4" /> : <Plus className="size-4 max-[340px]:hidden" />}
+          {formularioAbierto ? "Cerrar" : "Agregar producto"}
         </Button>
       </div>
 
@@ -202,8 +202,8 @@ export function VistaCompras() {
         <div className="border-border bg-card text-muted-foreground space-y-2 rounded-2xl border p-6 text-center text-sm">
           <ShoppingCart className="mx-auto size-8 opacity-50" />
           <p>
-            El carrito está vacío. Escanea los precios en la tienda o agrégalos a
-            mano: se suman en dólares y en bolívares.
+            El carrito está vacío. Escanea los precios en la tienda o agrega los
+            productos uno a uno: se suman en dólares y en bolívares.
           </p>
         </div>
       ) : (
@@ -223,14 +223,9 @@ export function VistaCompras() {
 
       {carrito.articulos.length > 0 ? (
         <div className="space-y-2">
-          <Button onClick={exportarPdf} disabled={exportando} className="h-12 w-full rounded-xl text-base">
-            <FileDown className="size-5" />
-            {exportando ? "Generando el PDF…" : "Exportar PDF"}
-          </Button>
-
           {confirmandoVaciar ? (
             <div className="border-border bg-card space-y-2 rounded-2xl border p-3">
-              <p className="flex items-start gap-2 text-xs text-amber-200">
+              <p className="flex items-start gap-2 text-xs text-aviso">
                 <TriangleAlert className="mt-px size-3.5 shrink-0" />
                 Se borrarán los {suma.articulos} artículos, el título y el descuento.
               </p>
@@ -302,14 +297,20 @@ function Resumen({
 
   return (
     <section aria-label="Total del carrito" className="border-border bg-card space-y-3 rounded-2xl border p-4">
-      <div className="grid grid-cols-2 gap-3">
+      {/* Uno debajo del otro: lado a lado, un total en bolívares de millones no
+          cabía en media tarjeta. Si aun así no cabe, salta de línea en vez de salirse. */}
+      <div className="space-y-2">
         <div>
-          <p className="text-muted-foreground text-xs">Total en dólares</p>
-          <p className="cifras text-2xl font-semibold tracking-tight">{dolares(suma.total.usd)}</p>
+          <p className="text-muted-foreground text-xs">Total del Carrito en USD (BCV)</p>
+          <p className="cifras text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]">
+            {dolares(suma.total.usd)}
+          </p>
         </div>
-        <div className="text-right">
-          <p className="text-muted-foreground text-xs">Total en bolívares (BCV)</p>
-          <p className="cifras text-2xl font-semibold tracking-tight">{bolivares(suma.total.bs)}</p>
+        <div>
+          <p className="text-muted-foreground text-xs">Total del Carrito en VES (Bs)</p>
+          <p className="cifras text-2xl font-semibold tracking-tight [overflow-wrap:anywhere]">
+            {bolivares(suma.total.bs)}
+          </p>
         </div>
       </div>
 
@@ -357,7 +358,7 @@ function Resumen({
         )}
       </p>
       {tasa && desactualizada ? (
-        <p className="flex items-start gap-2 text-xs text-amber-200">
+        <p className="flex items-start gap-2 text-xs text-aviso">
           <TriangleAlert className="mt-px size-3.5 shrink-0" />
           Tasa desactualizada (del {formatearDiaCorto(tasa.fecha)}). Conéctate para
           actualizarla: los montos en bolívares pueden no cuadrar con la caja.

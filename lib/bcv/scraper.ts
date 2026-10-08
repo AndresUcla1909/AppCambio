@@ -94,7 +94,7 @@ function normalizarDia(contenido: string | undefined): DiaISO | null {
  * pasar, se reintenta con validación TLS relajada **sólo para bcv.org.ve**,
  * nunca de forma global.
  */
-async function descargarHtmlBcv(): Promise<string> {
+export async function descargarHtmlBcv(): Promise<string> {
   try {
     return await pedir(false);
   } catch (error) {

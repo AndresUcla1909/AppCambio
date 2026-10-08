@@ -7,7 +7,7 @@ import Link from "next/link";
  */
 export default function PaginaSinConexion() {
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center gap-3 px-8 text-center">
+    <main className="flex min-h-[calc(100dvh-var(--inset-arriba))] flex-col items-center justify-center gap-3 px-8 text-center">
       <CloudOff className="text-muted-foreground size-10" />
       <h1 className="text-lg font-semibold">Sin conexión</h1>
       <p className="text-muted-foreground text-sm">

@@ -2,34 +2,27 @@
 
 import { useState } from "react";
 import { Dialog } from "@base-ui/react/dialog";
-import { Check, Menu, X } from "lucide-react";
+import { Check, Menu, Moon, SunMedium, SunMoon, X, type LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { TipoTasa } from "@/lib/preferencias";
+import type { Tema } from "@/lib/tema";
+import { guardarTema, useTema } from "@/lib/useTema";
 import { cn } from "@/lib/utils";
 
-const OPCIONES: { valor: TipoTasa; etiqueta: string; detalle: string }[] = [
-  { valor: "bcv_usd", etiqueta: "Dólar BCV", detalle: "Tasa oficial del dólar" },
-  { valor: "bcv_eur", etiqueta: "Euro BCV", detalle: "Tasa oficial del euro" },
-  { valor: "usdt", etiqueta: "USDT", detalle: "Binance P2P, sólo con la tasa de hoy" },
+const TEMAS: { valor: Tema; etiqueta: string; detalle: string; Icono: LucideIcon }[] = [
+  { valor: "oscuro", etiqueta: "Oscuro", detalle: "Fondo negro, cómodo de noche", Icono: Moon },
+  { valor: "claro", etiqueta: "Claro", detalle: "Fondo blanco, se lee mejor al sol", Icono: SunMedium },
+  { valor: "sistema", etiqueta: "Automático", detalle: "Sigue el ajuste del teléfono", Icono: SunMoon },
 ];
 
 /**
- * Menú lateral de la calculadora. Por ahora sólo trae la tasa por defecto:
- * la que queda seleccionada al abrir la app.
+ * Menú lateral de la calculadora: por ahora, el tema claro u oscuro.
  *
  * Es un diálogo de Base UI: atrapa el foco, se cierra con Escape o tocando
  * fuera, y bloquea el desplazamiento de la página de atrás.
  */
-export function MenuLateral({
-  preferida,
-  onElegir,
-}: {
-  /** La tasa por defecto guardada; `null` si nunca se eligió (vale el dólar). */
-  preferida: TipoTasa | null;
-  onElegir: (tipo: TipoTasa) => void;
-}) {
+export function MenuLateral() {
   const [abierto, setAbierto] = useState(false);
-  const actual = preferida ?? "bcv_usd";
+  const { tema } = useTema();
 
   return (
     <Dialog.Root open={abierto} onOpenChange={setAbierto}>
@@ -66,39 +59,36 @@ export function MenuLateral({
           </div>
 
           <section className="mt-5 space-y-2 px-4">
-            <h2 className="text-sm font-medium">Tasa por defecto</h2>
+            <h2 className="text-sm font-medium">Tema</h2>
             <Dialog.Description className="text-muted-foreground text-xs">
-              La que queda seleccionada al abrir la app.
+              Cómo se ve la app en este teléfono.
             </Dialog.Description>
 
-            <div role="radiogroup" aria-label="Tasa por defecto" className="space-y-1.5 pt-1">
-              {OPCIONES.map(({ valor, etiqueta, detalle }) => {
-                const elegida = actual === valor;
+            <div role="radiogroup" aria-label="Tema" className="space-y-1.5 pt-1">
+              {TEMAS.map(({ valor, etiqueta, detalle, Icono }) => {
+                const elegido = tema === valor;
                 return (
                   <button
                     key={valor}
                     type="button"
                     role="radio"
-                    aria-checked={elegida}
-                    onClick={() => {
-                      onElegir(valor);
-                      setAbierto(false);
-                    }}
+                    aria-checked={elegido}
+                    // El menú queda abierto: así se ve el cambio al instante.
+                    onClick={() => guardarTema(valor)}
                     className={cn(
                       "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors",
                       "focus-visible:ring-azul focus-visible:ring-2 focus-visible:outline-none",
-                      elegida
-                        ? "border-azul bg-azul-tenue"
-                        : "border-border hover:bg-foreground/5",
+                      elegido ? "border-azul bg-azul-tenue" : "border-border hover:bg-foreground/5",
                     )}
                   >
+                    <Icono className={cn("size-4 shrink-0", elegido ? "text-azul" : "text-muted-foreground")} />
                     <span className="flex-1">
-                      <span className={cn("block text-sm font-medium", elegida && "text-azul")}>
+                      <span className={cn("block text-sm font-medium", elegido && "text-azul")}>
                         {etiqueta}
                       </span>
                       <span className="text-muted-foreground block text-[11px]">{detalle}</span>
                     </span>
-                    {elegida ? <Check className="text-azul size-4 shrink-0" /> : null}
+                    {elegido ? <Check className="text-azul size-4 shrink-0" /> : null}
                   </button>
                 );
               })}

@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 const PESTANAS = [
   { href: "/", etiqueta: "Inicio", Icono: Calculator },
-  { href: "/compras", etiqueta: "Compras", Icono: ShoppingCart },
+  { href: "/compras", etiqueta: "Carrito", Icono: ShoppingCart },
   { href: "/historial", etiqueta: "Historial", Icono: ChartLine },
 ] as const;
 

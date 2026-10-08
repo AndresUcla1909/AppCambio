@@ -4,7 +4,7 @@ import withSerwistInit from "@serwist/next";
 const nextConfig: NextConfig = {
   // El scraper del BCV usa cheerio: debe quedarse del lado del servidor.
   serverExternalPackages: ["cheerio"],
-  // Next 16 genera estos archivos en cada arranque; el proyecto ya tiene SPEC.md.
+  // Next 16 genera archivos de reglas para agentes en cada arranque; no hacen falta.
   agentRules: false,
 };
 
