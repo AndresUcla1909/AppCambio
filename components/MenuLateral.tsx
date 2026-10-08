@@ -37,15 +37,13 @@ export function MenuLateral() {
       <Dialog.Portal>
         <Dialog.Backdrop
           className={cn(
-            "fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] instalada:bottom-auto instalada:h-[100lvh]",
+            "fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px]",
             "data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
           )}
         />
         <Dialog.Popup
           className={cn(
             "bg-card text-card-foreground fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r shadow-2xl outline-none",
-            // Hasta el borde real en la app instalada (ver `instalada` en globals.css).
-            "instalada:bottom-auto instalada:h-[100lvh]",
             "pt-[calc(env(safe-area-inset-top)+12px)] pb-[calc(env(safe-area-inset-bottom)+16px)]",
             "data-open:animate-in data-open:slide-in-from-left data-closed:animate-out data-closed:slide-out-to-left",
             "duration-200",

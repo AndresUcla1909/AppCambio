@@ -11,13 +11,6 @@
 /* Las más bajas (iPhone SE de 1.ª gen., Safari con sus barras): un paso más. */
 @custom-variant muybajo (@media (max-height: 600px));
 
-/* App instalada. iOS 26 (WebKit bug 301108) mide 100dvh, innerHeight y el
-   `bottom: 0` de lo fijo quitándole la barra de estado: lo anclado abajo queda
-   flotando ~50 pt sobre el borde. Sólo 100lvh mide la pantalla entera, y en
-   una app instalada (sin barras del navegador) vale lo mismo en cualquier
-   versión, así que lo fijo a pantalla completa se ancla con él. */
-@custom-variant instalada (@media (display-mode: standalone));
-
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -113,8 +106,9 @@
   --aviso: oklch(0.92 0.12 96);
 }
 
-/* Alto de la barra de estado (notch) en la app instalada. Como variable para
-   restarlo del alto de pantalla (ver app/(tabs)/layout.tsx). */
+/* Lo que la app queda tapada arriba (notch) si se dibuja detrás de la barra de
+   estado. Con la barra sólida de iOS vale 0; como variable para restarlo del
+   alto de pantalla (ver app/(tabs)/layout.tsx). */
 :root {
   --inset-arriba: env(safe-area-inset-top);
 }

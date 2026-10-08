@@ -10,6 +10,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       theme={oscuro ? "dark" : "light"}
+      // Bajo el notch o la isla dinámica si la app se dibuja detrás de ellos.
+      offset={{ top: "calc(env(safe-area-inset-top) + 16px)" }}
+      mobileOffset={{ top: "calc(env(safe-area-inset-top) + 16px)" }}
       className="toaster group"
       icons={{
         success: (

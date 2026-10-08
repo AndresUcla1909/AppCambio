@@ -18,7 +18,13 @@ export const metadata: Metadata = {
   // Sin esto, iOS abre la app en Safari en vez de a pantalla completa.
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    // Sólida y no "black-translucent": con la translúcida, iOS 26 (WebKit bug
+    // 301108) mide la pantalla sin la barra de estado y deja una franja muerta
+    // abajo que ningún CSS alcanza; además la app quedaba bajo el difuminado
+    // del reloj y, en tema claro, la hora blanca no se leía. Con ésta la app
+    // empieza debajo del reloj. iOS la lee al abrir la app instalada; si no
+    // cambia, hay que quitarla de la pantalla de inicio y volver a agregarla.
+    statusBarStyle: "black",
     title: "Tasas",
   },
   // iOS detecta números largos como teléfonos y los pinta de azul.
