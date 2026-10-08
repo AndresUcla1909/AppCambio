@@ -153,13 +153,19 @@ export function formatearDia(dia: DiaISO | null | undefined): string {
   return `${dd}/${mes}/${anio}`;
 }
 
-/** "2026-09-11" -> "viernes, 11 de septiembre" */
+/** "2026-09-11" -> "11/09" */
+export function formatearDiaCorto(dia: DiaISO | null | undefined): string {
+  return formatearDia(dia).slice(0, 5);
+}
+
+/** "2026-09-11" -> "viernes, 11 de septiembre de 2026" */
 export function formatearDiaLargo(dia: DiaISO | null | undefined): string {
   if (!dia) return "—";
   return new Intl.DateTimeFormat("es-VE", {
     weekday: "long",
     day: "numeric",
     month: "long",
+    year: "numeric",
   }).format(diaAFecha(dia));
 }
 

@@ -49,12 +49,12 @@ export const CARRITO_VACIO: Carrito = {
 };
 
 /** Redondea a céntimos, como se cobra. */
-export function redondear(monto: number): number {
+function redondear(monto: number): number {
   return Math.round((monto + Number.EPSILON) * 100) / 100;
 }
 
 /** Deja un porcentaje entre 0 y 100; lo que no es número cuenta como 0. */
-export function acotarPorcentaje(valor: number): number {
+function acotarPorcentaje(valor: number): number {
   return Number.isFinite(valor) ? Math.min(100, Math.max(0, valor)) : 0;
 }
 

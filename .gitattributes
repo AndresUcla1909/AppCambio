@@ -1,2 +1,2 @@
-modelos/** -text
-lib/ocr/__fixtures__/** -text
+# Auto detect text files and perform LF normalization
+* text=auto

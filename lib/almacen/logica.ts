@@ -165,9 +165,12 @@ function saneaUna(cruda: unknown): FilaTasa | null {
 }
 
 /**
- * Funde un respaldo importado con lo que ya hay. Ante la misma fecha manda la
- * fila más recientemente actualizada, para que reimportar un archivo viejo no
- * pise correcciones nuevas.
+ * Funde un respaldo importado (o lo que llega de Supabase) con lo que ya hay.
+ * Ante la misma fecha manda la fila más recientemente actualizada, para que
+ * reimportar un archivo viejo no pise correcciones nuevas.
+ *
+ * Un euro ausente no borra uno conocido: hay fuentes (el historial del OVE)
+ * que sólo traen el dólar de esa misma publicación.
  */
 export function fundir(actuales: FilaTasa[], entrantes: FilaTasa[]): FilaTasa[] {
   const porFecha = new Map<string, FilaTasa>();
@@ -175,9 +178,15 @@ export function fundir(actuales: FilaTasa[], entrantes: FilaTasa[]): FilaTasa[] 
 
   for (const entrante of entrantes) {
     const existente = porFecha.get(entrante.fecha);
-    if (!existente || entrante.actualizado_en > existente.actualizado_en) {
+    if (!existente) {
       porFecha.set(entrante.fecha, entrante);
+      continue;
     }
+    const [gana, pierde] =
+      entrante.actualizado_en > existente.actualizado_en
+        ? [entrante, existente]
+        : [existente, entrante];
+    porFecha.set(entrante.fecha, { ...gana, eur: gana.eur ?? pierde.eur });
   }
 
   return ordenarAscendente([...porFecha.values()]);

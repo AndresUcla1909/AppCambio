@@ -6,7 +6,7 @@ import { Pause, Play, ScanLine, TriangleAlert, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { formatearMonto, formatearTasa } from "@/lib/formato";
-import type { TipoTasa } from "@/lib/offline";
+import type { TipoTasa } from "@/lib/preferencias";
 import { leerRenglones, obtenerLector } from "@/lib/ocr/lector";
 import {
   convertirPrecio,

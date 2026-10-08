@@ -1,28 +1,42 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Camera, CloudOff, Info, RefreshCw, Share2 } from "lucide-react";
+import {
+  Camera,
+  CloudOff,
+  Info,
+  RefreshCw,
+  Share2,
+  TriangleAlert,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ModoCamara, type OpcionTasa } from "@/components/camara/ModoCamara";
 import { CampoMonto } from "@/components/CampoMonto";
+import { MenuLateral } from "@/components/MenuLateral";
 import { SelectorFecha } from "@/components/SelectorFecha";
 import { TarjetaTasa } from "@/components/TarjetaTasa";
 import type { PrecioP2P } from "@/lib/binance/p2p";
 import type { TasaBcv } from "@/lib/bcv/scraper";
-import type { TasaVigente } from "@/lib/almacen/tipos";
+import { DIAS_BUFFER } from "@/lib/config";
+import { muestraDelDia } from "@/lib/almacen/buffer";
+import { useEnLinea, useFilasBuffer, useMuestrasP2p } from "@/lib/almacen/hooks";
 import {
+  guardarMuestraP2p,
   guardarTasa,
-  obtenerTasaVigente,
   pedirPersistencia,
-  sembrarSiHaceFalta,
+  rotarBuffer,
 } from "@/lib/almacen/navegador";
+import type { FilaTasa } from "@/lib/almacen/tipos";
 import {
   calcularBrecha,
   calcularVariacion,
+  diaEnCaracas,
   formatearDia,
+  formatearDiaCorto,
   formatearHora,
+  formatearInstante,
   formatearMonto,
   formatearTasa,
   hoyCaracas,
@@ -31,27 +45,65 @@ import {
 } from "@/lib/formato";
 import {
   guardarTasaPreferida,
-  leerTasaPreferida,
+  useTasaPreferida,
   type TipoTasa,
-} from "@/lib/offline";
+} from "@/lib/preferencias";
 import { precalentarLector } from "@/lib/ocr/lector";
 import type { Direccion } from "@/lib/ocr/precio";
+import {
+  necesitaRemoto,
+  resolverLocal,
+  type ResultadoTasa,
+} from "@/lib/tasas/resolver";
+import {
+  resolverTasaBcv,
+  sincronizarBuffer,
+  supabaseDisponible,
+} from "@/lib/tasas/sincronizar";
 import { cn } from "@/lib/utils";
 
+/** Si la app vuelve de segundo plano tras este tiempo, se refrescan las tasas. */
+const REFRESCAR_AL_VOLVER_MS = 10 * 60 * 1000;
+
+/** Lo que respondió Supabase y para qué consulta exacta. */
+type RespuestaRemota = {
+  dia: DiaISO;
+  hoy: DiaISO;
+  filas: FilaTasa[];
+  resultado: ResultadoTasa;
+};
+
+/** El USDT que se muestra: el recién pedido o el guardado en el teléfono. */
+type UsdtMostrado = { precio: number; obtenidoEn: string; enVivo: boolean };
+
 export function Calculadora() {
-  // `hoy` se fija al montar para no recalcularlo en cada render.
-  const [hoy] = useState<DiaISO>(() => hoyCaracas());
-  const [dia, setDia] = useState<DiaISO>(hoy);
-  const [bcv, setBcv] = useState<TasaVigente | null>(null);
-  const [listo, setListo] = useState(false);
-  const [capturando, setCapturando] = useState(false);
+  // `hoy` se recalcula al volver de segundo plano: iOS deja la PWA
+  // suspendida en memoria durante días.
+  const [hoy, setHoy] = useState<DiaISO>(() => hoyCaracas());
+  // `null` = "hoy": así, si la app pasa la medianoche abierta, sigue en hoy.
+  const [diaElegido, setDiaElegido] = useState<DiaISO | null>(null);
+  const dia = diaElegido ?? hoy;
+  const esHoy = dia === hoy;
+
+  // El búfer de 60 días del teléfono, como estado: se actualiza solo.
+  const filas = useFilasBuffer();
+  const muestras = useMuestrasP2p();
+  const enLinea = useEnLinea();
+  const conSupabase = supabaseDisponible();
+
+  // Empieza en `true`: al montar ya se está pidiendo la tasa.
+  const [capturando, setCapturando] = useState(true);
+  // `fetch` falló aunque el navegador crea tener red (wifi sin internet).
+  const [falloRed, setFalloRed] = useState(false);
+  const [remoto, setRemoto] = useState<RespuestaRemota | null>(null);
+  const ultimaActualizacion = useRef(0);
 
   const [p2p, setP2p] = useState<PrecioP2P | null>(null);
   const [cargandoP2p, setCargandoP2p] = useState(true);
   const [errorP2p, setErrorP2p] = useState<string | null>(null);
 
-  const [seleccion, setSeleccion] = useState<TipoTasa>("bcv_usd");
-  const [sinConexion, setSinConexion] = useState(false);
+  const preferida = useTasaPreferida();
+  const [seleccion, setSeleccion] = useState<TipoTasa | null>(null);
   const [camaraAbierta, setCamaraAbierta] = useState(false);
   const cerrarCamara = useCallback(() => setCamaraAbierta(false), []);
 
@@ -60,119 +112,148 @@ export function Calculadora() {
   // Qué campo tocó el usuario de último: al cambiar la tasa se recalcula el otro.
   const ultimoEditado = useRef<"usd" | "bs">("usd");
 
-  const esHoy = dia === hoy;
+  const sinConexion = !enLinea || falloRed;
 
   /* ---------------------------------------------------------------- */
   /* Datos                                                             */
   /* ---------------------------------------------------------------- */
 
   /**
-   * Pide al servidor la tasa que el BCV publica ahora y la guarda en este
-   * aparato. Es la única forma en que crece el historial: la app no puede
-   * ejecutarse en segundo plano en iOS.
+   * Aplica la respuesta de `descargarBcv`: guarda la tasa en el búfer (las
+   * pantallas se enteran solas, ver `useFilasBuffer`) y apaga el "cargando".
+   * El "cargando" lo enciende `capturarBcv`; al arrancar ya empieza encendido,
+   * así el efecto no cambia estado antes de que llegue la respuesta.
    */
-  const capturarBcv = useCallback(
-    async (fechaMostrada: DiaISO) => {
-      setCapturando(true);
-      try {
-        const respuesta = await fetch("/api/bcv", { cache: "no-store" });
-        if (!respuesta.ok) throw new Error("El BCV no respondió");
-        const tasa = (await respuesta.json()) as TasaBcv;
-
-        guardarTasa({
-          fecha: tasa.fecha,
-          usd: tasa.usd,
-          eur: tasa.eur,
-          fuente: "bcv",
-        });
-        setBcv(obtenerTasaVigente(fechaMostrada));
-        setSinConexion(false);
-        return tasa;
-      } catch {
-        // Sin red se sigue con lo guardado: para eso está el almacén local.
-        setSinConexion(true);
-        return null;
-      } finally {
-        setCapturando(false);
-      }
-    },
-    [],
-  );
-
-  const cargarP2p = useCallback(async () => {
-    setCargandoP2p(true);
-    try {
-      const respuesta = await fetch("/api/p2p", { cache: "no-store" });
-      if (!respuesta.ok) {
-        const cuerpo = await respuesta.json().catch(() => ({}));
-        throw new Error(cuerpo.error ?? "USDT no disponible");
-      }
-      const datos = (await respuesta.json()) as PrecioP2P;
-      setP2p(datos);
-      setErrorP2p(null);
-      return datos;
-    } catch (error) {
-      setErrorP2p((error as Error).message);
-      return null;
-    } finally {
-      setCargandoP2p(false);
-    }
+  const aplicarBcv = useCallback((respuesta: Awaited<ReturnType<typeof descargarBcv>>) => {
+    setCapturando(false);
+    // Sin red se sigue con lo guardado: para eso está el búfer local. El BCV
+    // caído no es falta de conexión: lo cubre el aviso de tasa desactualizada.
+    setFalloRed(respuesta.fallo === "red");
+    if (!respuesta.tasa) return null;
+    const { tasa } = respuesta;
+    guardarTasa({ fecha: tasa.fecha, usd: tasa.usd, eur: tasa.eur, fuente: "bcv" });
+    return tasa;
   }, []);
 
-  // Arranque: se pinta lo guardado de inmediato y luego se busca lo nuevo.
-  useEffect(() => {
-    sembrarSiHaceFalta();
-    void pedirPersistencia();
+  const capturarBcv = useCallback(() => {
+    ultimaActualizacion.current = Date.now();
+    setCapturando(true);
+    return descargarBcv().then(aplicarBcv);
+  }, [aplicarBcv]);
 
-    const preferida = leerTasaPreferida();
-    if (preferida) setSeleccion(preferida);
-
-    setBcv(obtenerTasaVigente(hoy));
-    setListo(true);
-
-    void capturarBcv(hoy);
-    void cargarP2p();
-    precalentarLector();
-  }, [hoy, capturarBcv, cargarP2p]);
-
-  // Cambiar de fecha sólo consulta el almacén local: es instantáneo.
-  useEffect(() => {
-    if (!listo) return;
-    setBcv(obtenerTasaVigente(dia));
-  }, [dia, listo]);
-
-  // Al recuperar la conexión se vuelve a intentar lo que falló.
-  useEffect(() => {
-    const alConectar = () => {
-      setSinConexion(false);
-      void capturarBcv(dia);
-      if (esHoy) void cargarP2p();
-    };
-    const alDesconectar = () => setSinConexion(true);
-
-    window.addEventListener("online", alConectar);
-    window.addEventListener("offline", alDesconectar);
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      setSinConexion(true);
+  const aplicarP2p = useCallback((respuesta: Awaited<ReturnType<typeof descargarP2p>>) => {
+    setCargandoP2p(false);
+    if ("error" in respuesta) {
+      setErrorP2p(respuesta.error);
+      return null;
     }
-    return () => {
-      window.removeEventListener("online", alConectar);
-      window.removeEventListener("offline", alDesconectar);
+    setP2p(respuesta.datos);
+    setErrorP2p(null);
+    // Al búfer: sirve sin conexión y para consultar días pasados.
+    guardarMuestraP2p(respuesta.datos.precio, respuesta.datos.obtenidoEn);
+    return respuesta.datos;
+  }, []);
+
+  const cargarP2p = useCallback(() => {
+    setCargandoP2p(true);
+    return descargarP2p().then(aplicarP2p);
+  }, [aplicarP2p]);
+
+  // Arranque: se pinta lo guardado de inmediato y luego se busca lo nuevo.
+  // `capturando` y `cargandoP2p` ya empiezan en `true`: aquí no se marca
+  // nada antes de que llegue la respuesta.
+  useEffect(() => {
+    rotarBuffer();
+    void pedirPersistencia();
+    // Trae de Supabase los últimos 60 días, si está configurado y hay red.
+    void sincronizarBuffer();
+    ultimaActualizacion.current = Date.now();
+    void descargarBcv().then(aplicarBcv);
+    void descargarP2p().then(aplicarP2p);
+    precalentarLector();
+  }, [aplicarBcv, aplicarP2p]);
+
+  // Al recuperar la conexión, o al volver de segundo plano tras un rato, se
+  // vuelve a pedir todo. Al volver también se recalcula "hoy".
+  useEffect(() => {
+    const actualizar = () => {
+      void capturarBcv();
+      void cargarP2p();
     };
-  }, [dia, esHoy, capturarBcv, cargarP2p]);
+    const alVolver = () => {
+      if (document.visibilityState !== "visible") return;
+      setHoy(hoyCaracas());
+      if (Date.now() - ultimaActualizacion.current > REFRESCAR_AL_VOLVER_MS) {
+        rotarBuffer();
+        actualizar();
+      }
+    };
+    window.addEventListener("online", actualizar);
+    document.addEventListener("visibilitychange", alVolver);
+    return () => {
+      window.removeEventListener("online", actualizar);
+      document.removeEventListener("visibilitychange", alVolver);
+    };
+  }, [capturarBcv, cargarP2p]);
+
+  /* ---------------------------------------------------------------- */
+  /* Tasa BCV de la fecha: búfer → Supabase → aviso                    */
+  /* ---------------------------------------------------------------- */
+
+  const local = useMemo(
+    () => (filas ? resolverLocal(filas, dia, hoy) : null),
+    [filas, dia, hoy],
+  );
+
+  // Sólo se pregunta a Supabase si lo local no basta y hay con qué.
+  const debeConsultar = local != null && necesitaRemoto(local) && enLinea && conSupabase;
+
+  useEffect(() => {
+    if (!debeConsultar || !filas) return;
+    let cancelado = false;
+    void resolverTasaBcv(dia, hoy).then((resultado) => {
+      if (!cancelado) setRemoto({ dia, hoy, filas, resultado });
+    });
+    return () => {
+      cancelado = true;
+    };
+  }, [debeConsultar, dia, hoy, filas]);
+
+  // Una respuesta que llegó tarde, para otra fecha, no se usa.
+  const remotoVigente =
+    remoto && remoto.dia === dia && remoto.hoy === hoy && remoto.filas === filas
+      ? remoto.resultado
+      : null;
+  const resultado = debeConsultar ? (remotoVigente ?? local) : local;
+  const buscandoRemoto = debeConsultar && remotoVigente == null;
+  const bcv = resultado?.tasa ?? null;
+
+  /* ---------------------------------------------------------------- */
+  /* USDT: el de ahora o el guardado ese día                           */
+  /* ---------------------------------------------------------------- */
+
+  const muestra = useMemo(
+    () => (muestras ? muestraDelDia(muestras, dia) : null),
+    [muestras, dia],
+  );
+  const usdt: UsdtMostrado | null =
+    esHoy && p2p
+      ? { precio: p2p.precio, obtenidoEn: p2p.obtenidoEn, enVivo: true }
+      : muestra
+        ? { precio: muestra.precio, obtenidoEn: muestra.obtenidoEn, enVivo: false }
+        : null;
 
   /* ---------------------------------------------------------------- */
   /* Tasa activa y cálculo                                             */
   /* ---------------------------------------------------------------- */
 
-  // El USDT sólo existe para hoy: su precio no se guarda en historial.
-  const usdtDisponible = esHoy && p2p != null;
+  const seleccionBase: TipoTasa = seleccion ?? preferida ?? "bcv_usd";
   const seleccionEfectiva: TipoTasa =
-    seleccion === "usdt" && !usdtDisponible ? "bcv_usd" : seleccion;
+    seleccionBase === "usdt" && usdt == null ? "bcv_usd" : seleccionBase;
 
   const tasaActiva =
     seleccionEfectiva === "usdt"
-      ? (p2p?.precio ?? null)
+      ? (usdt?.precio ?? null)
       : seleccionEfectiva === "bcv_eur"
         ? (bcv?.eur ?? null)
         : (bcv?.usd ?? null);
@@ -187,8 +268,8 @@ export function Calculadora() {
 
   // Las tasas que el modo cámara deja elegir: las mismas que hay en pantalla.
   const tasasCamara: OpcionTasa[] = [];
-  if (usdtDisponible && p2p) {
-    tasasCamara.push({ tipo: "usdt", nombre: "USDT", valor: p2p.precio, moneda: "$" });
+  if (usdt) {
+    tasasCamara.push({ tipo: "usdt", nombre: "USDT", valor: usdt.precio, moneda: "$" });
   }
   if (bcv) {
     tasasCamara.push({ tipo: "bcv_usd", nombre: "Dólar BCV", valor: bcv.usd, moneda: "$" });
@@ -248,9 +329,19 @@ export function Calculadora() {
     }
   }
 
+  /** Tocar una tarjeta cambia la tasa del momento, no la de por defecto. */
   function elegir(tipo: TipoTasa) {
     setSeleccion(tipo);
+  }
+
+  /** Desde el menú: la guarda como tasa por defecto y la usa ya. */
+  function elegirPorDefecto(tipo: TipoTasa) {
     guardarTasaPreferida(tipo);
+    setSeleccion(tipo);
+  }
+
+  function elegirDia(nuevo: DiaISO) {
+    setDiaElegido(nuevo === hoy ? null : nuevo);
   }
 
   /** Lleva a la calculadora el precio que se leyó con la cámara. */
@@ -266,7 +357,9 @@ export function Calculadora() {
       `Tasas del ${formatearDia(bcv?.fecha ?? dia)}`,
       bcv ? `Dólar BCV: Bs ${formatearTasa(bcv.usd)}` : null,
       bcv?.eur ? `Euro BCV: Bs ${formatearTasa(bcv.eur)}` : null,
-      p2p && esHoy ? `USDT P2P: Bs ${formatearTasa(p2p.precio)}` : null,
+      usdt
+        ? `USDT P2P: Bs ${formatearTasa(usdt.precio)}${usdt.enVivo ? "" : ` (visto ${formatearInstante(usdt.obtenidoEn)})`}`
+        : null,
       usd && bs ? `\n${monedaActiva} ${usd} = Bs ${bs} (${nombreTasa})` : null,
     ].filter(Boolean);
     const texto = lineas.join("\n");
@@ -284,7 +377,7 @@ export function Calculadora() {
   }
 
   async function refrescar() {
-    const tareas: Promise<unknown>[] = [capturarBcv(dia)];
+    const tareas: Promise<unknown>[] = [capturarBcv()];
     if (esHoy) tareas.push(cargarP2p());
     const [tasa] = await Promise.all(tareas);
     if (tasa) toast.success("Actualizado");
@@ -297,13 +390,29 @@ export function Calculadora() {
 
   const variacionUsd = calcularVariacion(bcv?.usd, bcv?.usd_anterior);
   const variacionEur = calcularVariacion(bcv?.eur, bcv?.eur_anterior);
-  const brecha = calcularBrecha(p2p?.precio, bcv?.usd);
-  const cargandoBcv = !listo || (capturando && bcv == null);
+  const brecha = calcularBrecha(usdt?.precio, bcv?.usd);
+  const cargandoBcv = filas == null || (capturando && bcv == null);
+
+  const pieUsdt = usdt
+    ? usdt.enVivo
+      ? "brecha vs BCV"
+      : `${esHoy ? "guardado" : "visto"} ${formatearHora(usdt.obtenidoEn)}`
+    : undefined;
+  const motivoSinUsdt = usdt
+    ? undefined
+    : esHoy
+      ? errorP2p && !cargandoP2p
+        ? "USDT no disponible"
+        : undefined
+      : "Sin registro ese día";
 
   return (
     <div className="space-y-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold tracking-tight">Calculadora</h1>
+        <div className="flex items-center gap-1">
+          <MenuLateral preferida={preferida} onElegir={elegirPorDefecto} />
+          <h1 className="text-2xl font-semibold tracking-tight">Calculadora</h1>
+        </div>
         <div className="flex items-center gap-1">
           <Button
             variant="outline"
@@ -336,51 +445,70 @@ export function Calculadora() {
         />
       ) : null}
 
-      <SelectorFecha dia={dia} onCambiar={setDia} />
+      <SelectorFecha dia={dia} onCambiar={elegirDia} />
 
-      {sinConexion ? (
+      {/* Si la fecha está fuera del búfer, ya lo dice el aviso de más abajo. */}
+      {sinConexion && !(bcv == null && resultado?.fueraDeVentana) ? (
         <Aviso icono={CloudOff} tono="ambar">
           Sin conexión — usando las tasas guardadas en este teléfono.
         </Aviso>
       ) : null}
 
-      {/* Fin de semana o feriado: el BCV no publicó ese día. */}
-      {bcv && !bcv.es_exacta ? (
+      {/* La tasa usada tiene demasiados días: no debe pasar por la de hoy. */}
+      {bcv && resultado?.desactualizada ? (
+        <Aviso icono={TriangleAlert} tono="ambar">
+          Tasa desactualizada (del {formatearDiaCorto(bcv.fecha)}).{" "}
+          {buscandoRemoto
+            ? "Buscando una más reciente…"
+            : sinConexion
+              ? "Conéctate para actualizarla."
+              : "No se encontró una más reciente."}
+        </Aviso>
+      ) : bcv && !bcv.es_exacta ? (
+        // Fin de semana o feriado: el BCV no publicó ese día.
         <Aviso icono={Info} tono="neutro">
           Sin publicación ese día — usando la tasa del {formatearDia(bcv.fecha)}.
         </Aviso>
       ) : null}
 
-      {listo && !bcv && !capturando ? (
-        <div className="border-border bg-card space-y-3 rounded-2xl border p-4">
-          <p className="text-sm">No hay tasa registrada para esta fecha.</p>
-          <Button
-            render={<Link href="/historial#cargar" />}
-            size="sm"
-            className="rounded-lg"
-          >
-            Cargarla manualmente
-          </Button>
-        </div>
+      {filas && !bcv && !capturando ? (
+        buscandoRemoto ? (
+          <Aviso icono={Info} tono="neutro">
+            Buscando esa fecha en el historial en línea…
+          </Aviso>
+        ) : resultado?.fueraDeVentana ? (
+          <Aviso icono={CloudOff} tono="ambar">
+            {!enLinea
+              ? `Sin conexión — el teléfono solo guarda los últimos ${DIAS_BUFFER} días. Conéctate para consultar esta fecha.`
+              : !conSupabase
+                ? `El teléfono solo guarda los últimos ${DIAS_BUFFER} días y el historial en línea no está configurado.`
+                : "No hay tasa registrada para esta fecha."}
+          </Aviso>
+        ) : (
+          <div className="border-border bg-card space-y-3 rounded-2xl border p-4">
+            <p className="text-sm">No hay tasa registrada para esta fecha.</p>
+            <Button
+              render={<Link href="/historial#cargar" />}
+              size="sm"
+              className="rounded-lg"
+            >
+              Cargarla manualmente
+            </Button>
+          </div>
+        )
       ) : null}
 
       <div className="space-y-3">
         <TarjetaTasa
           titulo="USDT · Binance P2P"
-          valor={esHoy ? (p2p?.precio ?? null) : null}
-          variacion={esHoy ? brecha : null}
+          valor={usdt?.precio ?? null}
+          variacion={usdt ? brecha : null}
           etiquetaVariacion="brecha frente al BCV"
-          pie={esHoy && p2p ? "brecha vs BCV" : undefined}
+          pie={pieUsdt}
           seleccionada={seleccionEfectiva === "usdt"}
           onSeleccionar={() => elegir("usdt")}
-          cargando={esHoy && cargandoP2p}
-          deshabilitada={
-            !esHoy
-              ? "Solo tasa actual"
-              : errorP2p
-                ? "USDT no disponible"
-                : undefined
-          }
+          cargando={esHoy && cargandoP2p && usdt == null}
+          deshabilitada={motivoSinUsdt}
         />
 
         <div className="grid grid-cols-2 gap-3">
@@ -438,14 +566,22 @@ export function Calculadora() {
 
       <footer className="text-muted-foreground flex items-center justify-between gap-2 text-[11px]">
         <div className="space-y-0.5">
-          <p>Act. BCV: {formatearDia(bcv?.fecha)}</p>
+          <p>
+            Act. BCV: {formatearDia(bcv?.fecha)}
+            {resultado?.origen === "supabase" ? " · historial en línea" : ""}
+          </p>
           <p>
             Act. USDT:{" "}
-            {p2p
-              ? formatearHora(p2p.obtenidoEn)
-              : errorP2p
-                ? "no disponible"
-                : "…"}
+            {usdt
+              ? // Si no es de hoy, con fecha: una hora sola engaña.
+                diaEnCaracas(new Date(usdt.obtenidoEn)) === hoy
+                ? formatearHora(usdt.obtenidoEn)
+                : formatearInstante(usdt.obtenidoEn)
+              : esHoy
+                ? errorP2p
+                  ? "no disponible"
+                  : "…"
+                : "—"}
           </p>
         </div>
         <Button
@@ -463,6 +599,39 @@ export function Calculadora() {
       </footer>
     </div>
   );
+}
+
+/**
+ * Pide la tasa del BCV al servidor. Nunca lanza: distingue la falta de red
+ * (el `fetch` no llegó) de un fallo del BCV o del servidor.
+ */
+async function descargarBcv(): Promise<{ tasa: TasaBcv | null; fallo: "red" | "servidor" | null }> {
+  let respuesta: Response;
+  try {
+    respuesta = await fetch("/api/bcv", { cache: "no-store" });
+  } catch {
+    return { tasa: null, fallo: "red" };
+  }
+  if (!respuesta.ok) return { tasa: null, fallo: "servidor" };
+  try {
+    return { tasa: (await respuesta.json()) as TasaBcv, fallo: null };
+  } catch {
+    return { tasa: null, fallo: "servidor" };
+  }
+}
+
+/** Pide el USDT al servidor. Nunca lanza: devuelve el precio o el motivo del fallo. */
+async function descargarP2p(): Promise<{ datos: PrecioP2P } | { error: string }> {
+  try {
+    const respuesta = await fetch("/api/p2p", { cache: "no-store" });
+    if (!respuesta.ok) {
+      const cuerpo = await respuesta.json().catch(() => ({}));
+      return { error: cuerpo.error ?? "USDT no disponible" };
+    }
+    return { datos: (await respuesta.json()) as PrecioP2P };
+  } catch (error) {
+    return { error: (error as Error).message || "USDT no disponible" };
+  }
 }
 
 function Aviso({

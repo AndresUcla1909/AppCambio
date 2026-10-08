@@ -4,6 +4,7 @@ import {
   calcularVariacion,
   fechaADia,
   formatearDia,
+  formatearDiaLargo,
   formatearMonto,
   formatearPorcentaje,
   formatearTasa,
@@ -80,6 +81,12 @@ describe("formateo es-VE", () => {
   it("da la vuelta a las fechas ISO", () => {
     expect(formatearDia("2026-09-11")).toBe("11/09/2026");
     expect(formatearDia(null)).toBe("—");
+  });
+
+  it("incluye el año en la fecha larga del selector", () => {
+    expect(formatearDiaLargo("2026-09-11")).toBe("viernes, 11 de septiembre de 2026");
+    expect(formatearDiaLargo("2025-12-31")).toBe("miércoles, 31 de diciembre de 2025");
+    expect(formatearDiaLargo(null)).toBe("—");
   });
 });
 

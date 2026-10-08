@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { URL_BCV, USER_AGENT } from "../config";
+import { TIMEOUT_BCV_MS, URL_BCV, USER_AGENT } from "../config";
 import type { DiaISO } from "../formato";
 
 export type TasaBcv = {
@@ -111,6 +111,7 @@ async function pedir(tlsRelajado: boolean): Promise<string> {
       Accept: "text/html,application/xhtml+xml",
     },
     cache: "no-store",
+    signal: AbortSignal.timeout(TIMEOUT_BCV_MS),
   };
 
   if (tlsRelajado) {

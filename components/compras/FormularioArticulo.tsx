@@ -73,7 +73,7 @@ export function FormularioArticulo({
           id="articulo-nombre"
           value={nombre}
           onChange={(e) => setNombre(e.target.value)}
-          placeholder="Harina PAN"
+          placeholder="Nombre del producto"
           autoComplete="off"
           enterKeyHint="next"
           className="h-11 rounded-xl"

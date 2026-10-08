@@ -15,7 +15,7 @@ npm run dev          # http://localhost:3000 (o el siguiente libre)
 
 | Comando | Para qué |
 | --- | --- |
-| `npm test` | 114 tests (incluye el lector de precios con los modelos reales y el PDF de compras) |
+| `npm test` | 167 tests (incluye el lector de precios con los modelos reales y el PDF de compras) |
 | `npm run tipos` | Chequeo de tipos |
 | `npm run build` | Build de producción (webpack, porque Serwist aún no soporta Turbopack) |
 | `npm run probar:bcv` | Muestra lo que devuelve el scraping. `-- --guardar` refresca el fixture |
@@ -23,24 +23,38 @@ npm run dev          # http://localhost:3000 (o el siguiente libre)
 
 ## Dónde viven los datos
 
-**En el navegador del teléfono, no en un servidor.** El historial se guarda en
-`localStorage` (`lib/almacen/navegador.ts`), y toda la lógica —variación entre
-publicaciones, tasa vigente en una fecha, upsert idempotente— está en
-`lib/almacen/logica.ts` como funciones puras, que es lo que cubren los tests.
+**Primero en el teléfono, y opcionalmente en Supabase.**
 
-Esto tiene tres consecuencias que conviene tener presentes:
+- **Búfer local de 60 días** (`lib/almacen/buffer.ts`, `navegador.ts`): las
+  tasas BCV y un USDT por día viven en `localStorage`. Cada escritura descarta
+  lo que pasó de los 60 días (se conserva la última anterior como ancla, para
+  que el primer día de la ventana tenga tasa vigente). Las pantallas lo leen
+  como estado con `useSyncExternalStore` (`lib/almacen/hooks.ts`).
+- **Supabase, sólo lectura** (`lib/supabase/tasas.ts`, migración en
+  `supabase/migrations/`): si están `NEXT_PUBLIC_SUPABASE_URL` y
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY`, al abrir la app se traen los últimos 60 días
+  al búfer, y las fechas que no estén en el teléfono se consultan ahí. Sin
+  esas variables, la app funciona sólo con el búfer.
+- **Orden de búsqueda** (`lib/tasas/resolver.ts`, con tests): búfer → Supabase
+  (si hay red y lo local no basta) → lo mejor que haya en el teléfono. Si la
+  tasa usada tiene más de 4 días (`DIAS_MAX_SIN_ACTUALIZAR`), se avisa
+  "Tasa desactualizada (del DD/MM)".
 
-1. **El historial es de ese aparato.** Por eso Ajustes trae exportar e importar
-   un respaldo en JSON. Conviene usarlo de vez en cuando.
-2. **Solo crece cuando abres la app.** iOS no permite que una PWA se ejecute en
-   segundo plano, así que la captura ocurre al abrirla o al pulsar "Refrescar".
-   Los días que no la abras quedan sin registrar y hay que cargarlos a mano
-   desde Historial → **+**.
-3. **Las tres pantallas son estáticas**, así que el service worker las precachea
-   y la app abre completa sin conexión.
+Consecuencias que conviene tener presentes:
 
-Al instalar por primera vez se siembran dos tasas reales del BCV capturadas el
-11/09/2026, para que el gráfico no arranque vacío.
+1. **El historial completo vive en Supabase** (desde octubre de 2021, ver
+   `supabase/seed-bcv-2021.sql`). El teléfono sólo guarda 60 días; sin
+   Supabase, lo anterior se pierde.
+2. **El búfer sólo crece cuando abres la app** (o desde Supabase). iOS no
+   permite que una PWA se ejecute en segundo plano. Los días que falten se
+   cargan a mano desde Historial → **+**.
+3. **Las pantallas son estáticas**, así que el service worker las guarda y la
+   app abre sin conexión. Las respuestas de `/api/*` y de Supabase nunca salen
+   de su caché: una tasa vieja no debe pasar por actual.
+
+La **tasa por defecto** (la que queda seleccionada al abrir la app) se elige
+en el menú lateral de la calculadora (`components/MenuLateral.tsx`); tocar
+una tarjeta cambia la tasa del momento, no la de por defecto.
 
 ## Fuentes
 
@@ -131,7 +145,33 @@ basta; no hace falta ninguna base de datos.
 
 Después, en Safari: **Compartir → Agregar a inicio**.
 
+## Captura automática (cron)
+
+Supabase tiene el historial oficial del BCV desde la reconversión de octubre
+de 2021 (`supabase/seed-bcv-2021.sql`). Para que siga creciendo solo, aunque
+nadie abra la app:
+
+```
+Supabase Cron (cada 2 h) ──► POST /api/cron/bcv  (Authorization: Bearer CRON_SECRET)
+                                  └─► lee bcv.org.ve y guarda en tasas_bcv con la secret key
+```
+
+- `app/api/cron/bcv/route.ts` + `lib/supabase/escritura.ts` (con tests). Es
+  idempotente: si la tasa ya está guardada no escribe. No guarda una tasa con
+  un salto de más del 25 % frente a la anterior ni con una fecha absurda:
+  responde 422 para que alguien lo revise.
+- `supabase/cron-bcv.sql` programa la llamada con pg_cron + pg_net y guarda
+  la URL y el secreto en el Vault.
+
 ## Variables de entorno
 
-Ninguna es obligatoria. `.env.example` queda como referencia por si más
-adelante se conecta una base de datos.
+| Variable | Dónde | Para qué |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | navegador y servidor | Proyecto de Supabase |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | navegador | Clave publishable: sólo lee (RLS) |
+| `SUPABASE_SERVICE_ROLE_KEY` | **sólo servidor** | Secret key: el cron escribe con ella |
+| `CRON_SECRET` | **sólo servidor** | Contraseña de `/api/cron/bcv`; la misma en el Vault |
+
+Sin las de Supabase, la app funciona sólo con el búfer local. Las
+`NEXT_PUBLIC_*` se incrustan al construir: tras cambiarlas en Vercel hay que
+volver a desplegar.

@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Download, Plus } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CloudOff, Download, Plus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,8 +14,11 @@ import {
 } from "@/components/ui/table";
 import { GraficoHistorial } from "@/components/historial/GraficoHistorial";
 import { FormularioTasa } from "@/components/historial/FormularioTasa";
-import { obtenerHistorial } from "@/lib/almacen/navegador";
-import type { FilaTasaConVariacion } from "@/lib/almacen/tipos";
+import { DIAS_BUFFER } from "@/lib/config";
+import { useEnLinea, useFilasBuffer } from "@/lib/almacen/hooks";
+import { fundir, historial } from "@/lib/almacen/logica";
+import type { FilaTasa } from "@/lib/almacen/tipos";
+import { configSupabase, consultarRango } from "@/lib/supabase/tasas";
 import {
   calcularVariacion,
   formatearDia,
@@ -42,29 +45,79 @@ const NOMBRE_FUENTE: Record<string, string> = {
   manual: "Manual",
 };
 
+/** Lo que respondió Supabase para un rango. */
+type Remotas = { rango: ClaveRango; filas: FilaTasa[] } | { rango: ClaveRango; error: true };
+
 export function VistaHistorial() {
-  const [filas, setFilas] = useState<FilaTasaConVariacion[]>([]);
-  const [listo, setListo] = useState(false);
+  // El búfer de 60 días del teléfono; `null` hasta montar (vive en localStorage).
+  const locales = useFilasBuffer();
+  const enLinea = useEnLinea();
+  const conSupabase = configSupabase() != null;
   const [rango, setRango] = useState<ClaveRango>("30");
+  const [remotas, setRemotas] = useState<Remotas | null>(null);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
 
-  const recargar = useCallback(() => {
-    setFilas(obtenerHistorial());
-  }, []);
+  const dias = RANGOS.find((r) => r.clave === rango)?.dias ?? null;
+  const desde = dias == null ? null : restarDias(hoyCaracas(), dias);
+  // Más allá del búfer hace falta Supabase.
+  const excedeBuffer = dias == null || dias > DIAS_BUFFER;
+  const debeConsultar = excedeBuffer && enLinea && conSupabase;
 
-  // El historial está en localStorage, así que sólo se puede leer tras montar.
   useEffect(() => {
-    recargar();
-    setListo(true);
-  }, [recargar]);
+    const config = configSupabase();
+    if (!debeConsultar || !config) return;
+    let cancelado = false;
+    consultarRango(desde, { config })
+      .then((filas) => {
+        // La variación se recalcula junto con las locales: sólo la tasa.
+        const base = filas.map(({ fecha, usd, eur, fuente, creado_en, actualizado_en }) => ({
+          fecha,
+          usd,
+          eur,
+          fuente,
+          creado_en,
+          actualizado_en,
+        }));
+        if (!cancelado) setRemotas({ rango, filas: base });
+      })
+      .catch(() => {
+        if (!cancelado) setRemotas({ rango, error: true });
+      });
+    return () => {
+      cancelado = true;
+    };
+  }, [debeConsultar, desde, rango]);
 
-  // Las filas llegan de la más reciente a la más antigua.
-  const filasDelRango = useMemo(() => {
-    const dias = RANGOS.find((r) => r.clave === rango)?.dias;
-    if (!dias) return filas;
-    const desde = restarDias(hoyCaracas(), dias);
-    return filas.filter((f) => f.fecha >= desde);
-  }, [filas, rango]);
+  const remotasDelRango =
+    debeConsultar && remotas?.rango === rango && "filas" in remotas ? remotas.filas : null;
+  const errorRemoto = debeConsultar && remotas?.rango === rango && "error" in remotas;
+  const cargandoRemoto = debeConsultar && remotas?.rango !== rango;
+
+  // De la más reciente a la más antigua. Ante la misma fecha, la versión
+  // actualizada más recientemente (local o de Supabase).
+  const filas = useMemo(() => {
+    if (!locales) return [];
+    return historial(remotasDelRango ? fundir(remotasDelRango, locales) : locales);
+  }, [locales, remotasDelRango]);
+  const listo = locales != null;
+
+  const filasDelRango = useMemo(
+    () => (desde ? filas.filter((f) => f.fecha >= desde) : filas),
+    [filas, desde],
+  );
+
+  // Por qué no se ve más allá de los 60 días, si es el caso.
+  const avisoRango = !excedeBuffer || remotasDelRango
+    ? null
+    : cargandoRemoto
+      ? "Buscando en el historial en línea…"
+      : !conSupabase
+        ? `El teléfono guarda solo los últimos ${DIAS_BUFFER} días y el historial en línea no está configurado.`
+        : !enLinea
+          ? `Sin conexión: el teléfono guarda solo los últimos ${DIAS_BUFFER} días.`
+          : errorRemoto
+            ? `No se pudo consultar el historial en línea; se muestran los últimos ${DIAS_BUFFER} días.`
+            : null;
 
   function exportarCsv() {
     if (filas.length === 0) {
@@ -130,12 +183,8 @@ export function VistaHistorial() {
 
       <div id="cargar" className="scroll-mt-4">
         {mostrarFormulario ? (
-          <FormularioTasa
-            onGuardada={() => {
-              recargar();
-              setMostrarFormulario(false);
-            }}
-          />
+          // La tabla se actualiza sola al guardar: lee el búfer como estado.
+          <FormularioTasa onGuardada={() => setMostrarFormulario(false)} />
         ) : null}
       </div>
 
@@ -164,6 +213,13 @@ export function VistaHistorial() {
               </button>
             ))}
           </div>
+
+          {avisoRango ? (
+            <p className="text-muted-foreground flex items-start gap-2 text-[11px]">
+              <CloudOff className="mt-px size-3.5 shrink-0" />
+              {avisoRango}
+            </p>
+          ) : null}
 
           <GraficoHistorial filas={filasDelRango} />
 
@@ -217,8 +273,10 @@ export function VistaHistorial() {
           </div>
 
           <p className="text-muted-foreground text-center text-[11px]">
-            {filasDelRango.length} de {filas.length} publicaciones · guardadas en
-            este teléfono
+            {filasDelRango.length} de {filas.length} publicaciones ·{" "}
+            {remotasDelRango
+              ? "teléfono + historial en línea"
+              : `últimos ${DIAS_BUFFER} días guardados en este teléfono`}
           </p>
         </>
       )}
