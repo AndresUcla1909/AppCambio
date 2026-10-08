@@ -368,12 +368,15 @@ function Paginacion<T>({
         <span className="relative">
           <select
             value={porPagina}
+            // En línea y no con la clase: así la flecha nativa nunca se suma a
+            // la nuestra, aunque el CSS generado venga incompleto.
+            style={{ appearance: "none", WebkitAppearance: "none" }}
             onChange={(e) => {
               const n = Number(e.target.value);
               if (esFilasPorPagina(n)) onPorPagina(n);
             }}
             className={cn(
-              "cifras border-border bg-card text-foreground h-9 appearance-none rounded-lg border py-0 pr-7 pl-3 text-xs font-medium",
+              "cifras border-border bg-card text-foreground h-9 rounded-lg border py-0 pr-7 pl-3 text-xs font-medium",
               "focus-visible:ring-azul focus-visible:ring-2 focus-visible:outline-none",
             )}
           >

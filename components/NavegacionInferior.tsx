@@ -16,7 +16,8 @@ export function NavegacionInferior() {
 
   return (
     <nav
-      className="bg-card/95 fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur-lg"
+      // Instalada: anclada al borde real con 100lvh (ver `instalada` en globals.css).
+      className="bg-card/95 fixed inset-x-0 bottom-0 z-40 border-t backdrop-blur-lg instalada:top-[100lvh] instalada:bottom-auto instalada:-translate-y-full"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="mx-auto flex max-w-md">

@@ -244,7 +244,7 @@ export function ModoCamara({
       role="dialog"
       aria-modal="true"
       aria-label="Modo cámara"
-      className="fixed inset-0 z-50 bg-black text-white"
+      className="fixed inset-0 z-50 bg-black text-white instalada:bottom-auto instalada:h-[100lvh]"
     >
       <video
         ref={videoRef}
